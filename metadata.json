@@ -1,0 +1,6 @@
+{
+  "name": "HyperPulse: Musculação & Hipertrofia",
+  "description": "Aplicativo profissional de musculação e hipertrofia com fichas de treino, rastreamento de cargas, cronômetro de descanso animado e modo offline PWA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
