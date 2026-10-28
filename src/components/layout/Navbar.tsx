@@ -1,13 +1,15 @@
 import React from 'react';
-import { Dumbbell, Play, Flame } from 'lucide-react';
+import { Dumbbell, Play, Flame, LogOut, User } from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
-import { UserSettings, ActiveWorkoutSession } from '../../types';
+import { UserSettings, ActiveWorkoutSession, AuthSession } from '../../types';
 
 interface NavbarProps {
   settings: UserSettings;
   activeSession: ActiveWorkoutSession | null;
   onResumeWorkout: () => void;
   streakDays: number;
+  currentUser?: AuthSession | null;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -15,6 +17,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeSession,
   onResumeWorkout,
   streakDays,
+  currentUser,
+  onLogout,
 }) => {
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md px-4 py-3">
@@ -35,7 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           {/* Streak Indicator */}
           {streakDays > 0 && (
             <div
@@ -56,6 +60,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Em Andamento</span>
             </button>
+          )}
+
+          {/* User Info & Logout Button */}
+          {currentUser && (
+            <div className="flex items-center gap-2 pl-1 border-l border-zinc-800/80">
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-300 font-semibold max-w-[120px] truncate">
+                <User className="w-3.5 h-3.5 text-lime-400 shrink-0" />
+                <span className="truncate">{currentUser.name.split(' ')[0]}</span>
+              </div>
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  title="Bloquear aplicativo / Sair"
+                  className="flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 p-1.5 sm:px-2.5 sm:py-1.5 text-xs font-semibold text-zinc-400 hover:text-red-400 transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sair</span>
+                </button>
+              )}
+            </div>
           )}
 
           {/* PWA Install Button */}

@@ -18,6 +18,7 @@ import {
   WorkoutLog,
   BodyMeasurement,
   UserSettings,
+  ActiveWorkoutSession,
 } from '../../types';
 import {
   formatDatePortuguese,
@@ -34,6 +35,7 @@ interface DashboardProps {
   measurements: BodyMeasurement[];
   settings: UserSettings;
   streakCount: number;
+  activeSession?: ActiveWorkoutSession | null;
   onStartWorkout: (routine: WorkoutRoutine) => void;
   onNavigateTab: (tab: any) => void;
   onOpenNewMeasurement: () => void;
@@ -45,6 +47,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   measurements,
   settings,
   streakCount,
+  activeSession,
   onStartWorkout,
   onNavigateTab,
   onOpenNewMeasurement,
@@ -148,17 +151,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md bg-lime-400/20 px-2.5 py-1 text-xs font-bold text-lime-400 uppercase tracking-wide">
                 {todayRoutine && !todayRoutine.isRestDay
                   ? 'Treino de Hoje'
-                  : 'Próximo Treino'}
+                  : 'Próximo Treino Programado'}
               </span>
-              <span className="text-xs text-zinc-400">
-                {DAY_NAMES[nextTrainingRoutine?.dayOfWeek ?? currentDayOfWeek]}
+              <span className="text-xs text-zinc-400 font-medium">
+                {todayRoutine && !todayRoutine.isRestDay
+                  ? DAY_NAMES[currentDayOfWeek]
+                  : `Próximo: ${DAY_NAMES[nextTrainingRoutine?.dayOfWeek ?? currentDayOfWeek]}`}
               </span>
               {workoutDoneToday && (
-                <span className="flex items-center gap-1 text-xs font-semibold text-lime-400">
+                <span className="flex items-center gap-1 text-xs font-semibold text-lime-400 bg-lime-500/10 px-2 py-0.5 rounded-md">
                   <CheckCircle className="w-3.5 h-3.5" />
                   Concluído hoje!
                 </span>
@@ -167,29 +172,63 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {todayRoutine?.isRestDay
-                ? 'Descanso Programado'
+                ? 'Dia de Descanso'
                 : todayRoutine?.name || nextTrainingRoutine?.name}
             </h2>
 
             <p className="text-xs sm:text-sm text-zinc-300 max-w-xl leading-relaxed">
               {todayRoutine?.isRestDay
-                ? 'O descanso faz parte do processo de hipertrofia. Regeneração muscular, síntese protéica e recuperação do SNC. Se desejar, você pode antecipar outro treino.'
+                ? 'Hoje é dia de descanso programado. Sono reparador, hidratação e recuperação muscular. Caminhada leve e mobilidade são opcionais, sem serem contabilizadas como falha.'
                 : todayRoutine?.description || nextTrainingRoutine?.description}
             </p>
 
-            {/* Muscle Groups Covered */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {(todayRoutine?.isRestDay
-                ? nextTrainingRoutine?.targetMuscleGroups
-                : todayRoutine?.targetMuscleGroups || []
-              )?.map((mg) => (
-                <span
-                  key={mg}
-                  className="rounded-lg bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-300"
-                >
-                  {MUSCLE_GROUP_LABELS[mg]}
+            {/* Structured Session Metrics: Grupo Muscular, Exercícios, Séries Planejadas, Duração Estimada */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 max-w-xl">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2.5">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                  Grupo Muscular
                 </span>
-              ))}
+                <span className="text-xs font-bold text-white truncate block mt-0.5">
+                  {(todayRoutine?.isRestDay
+                    ? nextTrainingRoutine?.targetMuscleGroups
+                    : todayRoutine?.targetMuscleGroups || []
+                  )
+                    .map((mg) => MUSCLE_GROUP_LABELS[mg])
+                    .slice(0, 2)
+                    .join(', ') || 'Recuperação'}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2.5">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                  Exercícios
+                </span>
+                <span className="text-xs font-bold text-white block mt-0.5 font-mono">
+                  {todayRoutine?.isRestDay
+                    ? `${nextTrainingRoutine?.exercises.length || 0} exercícios`
+                    : `${todayRoutine?.exercises.length || 0} exercícios`}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2.5">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                  Séries Planejadas
+                </span>
+                <span className="text-xs font-bold text-lime-400 block mt-0.5 font-mono">
+                  {todayRoutine?.isRestDay
+                    ? `${nextTrainingRoutine?.totalPlannedSets || nextTrainingRoutine?.exercises.reduce((a, e) => a + e.sets.length, 0) || 0} séries`
+                    : `${todayRoutine?.totalPlannedSets || todayRoutine?.exercises.reduce((a, e) => a + e.sets.length, 0) || 0} séries`}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-2.5">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                  Duração Estimada
+                </span>
+                <span className="text-xs font-bold text-white block mt-0.5 font-mono">
+                  {todayRoutine?.isRestDay ? 'Livre' : (todayRoutine?.estimatedMinutes || '60 a 75 min')}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -201,7 +240,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="flex items-center justify-center gap-2.5 rounded-2xl bg-lime-400 px-6 py-4 text-base font-extrabold text-zinc-950 shadow-lg shadow-lime-950/40 transition hover:bg-lime-300 active:scale-95"
               >
                 <Play className="w-5 h-5 fill-current" />
-                <span>{workoutDoneToday ? 'Repetir Treino' : 'Iniciar Treino'}</span>
+                <span>
+                  {activeSession ? 'Retomar Treino em Andamento' : workoutDoneToday ? 'Repetir Treino' : 'Iniciar Treino'}
+                </span>
               </button>
             ) : nextTrainingRoutine ? (
               <button
@@ -209,7 +250,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="flex items-center justify-center gap-2.5 rounded-2xl bg-lime-400 px-6 py-4 text-base font-extrabold text-zinc-950 shadow-lg shadow-lime-950/40 transition hover:bg-lime-300 active:scale-95"
               >
                 <Play className="w-5 h-5 fill-current" />
-                <span>Treinar Agora</span>
+                <span>
+                  {activeSession ? 'Retomar Treino em Andamento' : 'Antecipar Treino'}
+                </span>
               </button>
             ) : null}
 

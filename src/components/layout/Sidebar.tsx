@@ -8,7 +8,10 @@ import {
   History,
   Settings,
   Flame,
+  LogOut,
+  User,
 } from 'lucide-react';
+import { AuthSession } from '../../types';
 
 export type NavTab =
   | 'dashboard'
@@ -23,9 +26,17 @@ interface SidebarProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   streakCount: number;
+  currentUser?: AuthSession | null;
+  onLogout?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, streakCount }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentTab,
+  onSelectTab,
+  streakCount,
+  currentUser,
+  onLogout,
+}) => {
   const navItems: { id: NavTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
     { id: 'routines', label: 'Fichas', icon: CalendarDays },
@@ -61,15 +72,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, strea
           })}
         </nav>
 
+        {/* User Card & Logout in Desktop Sidebar */}
+        {currentUser && (
+          <div className="pt-3 border-t border-zinc-900 mb-2">
+            <div className="flex items-center justify-between rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-2.5">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="h-8 w-8 rounded-xl bg-lime-400/10 border border-lime-400/20 flex items-center justify-center text-lime-400 shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="overflow-hidden">
+                  <span className="block text-xs font-bold text-white truncate">{currentUser.name}</span>
+                  <span className="block text-[10px] text-zinc-500 truncate">{currentUser.email}</span>
+                </div>
+              </div>
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  title="Bloquear / Sair da conta"
+                  className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition shrink-0"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Motivational Card in Desktop Sidebar */}
-        <div className="mt-auto pt-4 border-t border-zinc-900">
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-3.5 text-xs text-zinc-400">
+        <div className="mt-auto pt-2 border-t border-zinc-900">
+          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-3 text-xs text-zinc-400">
             <div className="flex items-center gap-1.5 text-lime-400 font-bold mb-1">
               <Flame className="w-4 h-4 fill-current" />
               <span>Foco & Hipertrofia</span>
             </div>
-            <p className="line-clamp-3 text-zinc-300">
-              Descanse entre 60 a 120s para ressíntese ideal de fosfocreatina e mantenha a cadência excêntrica sob controle.
+            <p className="line-clamp-2 text-zinc-400 text-[11px]">
+              Descanse entre as séries para ressíntese ideal e mantenha a cadência sob controle.
             </p>
           </div>
         </div>

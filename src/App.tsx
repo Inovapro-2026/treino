@@ -83,8 +83,8 @@ export default function App() {
 
       if (loadedActiveSession) {
         setActiveSession(loadedActiveSession);
-        // If there was an active workout in progress, auto open it for user convenience
-        setIsWorkoutModalOpen(true);
+        // O cronômetro só inicia e a tela só abre quando o usuário clica no botão de treino
+        setIsWorkoutModalOpen(false);
       }
     } catch (err) {
       console.error('Failed to load storage data', err);
@@ -137,10 +137,10 @@ export default function App() {
     return streak;
   }, [logs, settings.weeklyWorkoutGoal]);
 
-  // Start or resume workout
+  // Start or resume workout when user clicks the workout button
   const handleStartWorkout = (routine: WorkoutRoutine) => {
-    // If active session exists for this or another routine, open it
-    if (activeSession) {
+    // If active session already exists for this routine, resume it
+    if (activeSession && activeSession.routineId === routine.id) {
       setIsWorkoutModalOpen(true);
       return;
     }
@@ -156,11 +156,13 @@ export default function App() {
       })),
     }));
 
+    const now = Date.now();
     const newSession: ActiveWorkoutSession = {
-      id: `session_${Date.now()}`,
+      id: `session_${now}`,
       routineId: routine.id,
       routineName: routine.name,
-      startTime: Date.now(),
+      startTime: now,
+      isStarted: true,
       totalPausedDurationMs: 0,
       currentExerciseIndex: 0,
       exercises: clonedExercises,
@@ -320,6 +322,7 @@ export default function App() {
               measurements={measurements}
               settings={settings}
               streakCount={streakCount}
+              activeSession={activeSession}
               onStartWorkout={handleStartWorkout}
               onNavigateTab={setCurrentTab}
               onOpenNewMeasurement={() => setIsNewMeasurementOpen(true)}

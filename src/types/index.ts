@@ -29,6 +29,8 @@ export interface Exercise {
   equipment: Equipment;
   instructions: string;
   tips?: string;
+  isMultiarticular?: boolean;
+  isUnilateral?: boolean;
   isCustom?: boolean;
   isFavorite?: boolean;
 }
@@ -37,11 +39,17 @@ export interface WorkoutSet {
   id: string;
   setNumber: number;
   targetReps: number;
+  minReps?: number;
+  maxReps?: number;
+  repsRange?: string; // ex: '8-12', '10-15', '12-20'
   targetWeightKg: number;
   restSeconds: number;
   completed: boolean;
-  actualReps?: number;
-  actualWeightKg?: number;
+  skipped?: boolean;
+  actualReps?: number | string;
+  repsLeft?: number | string; // Para exercícios unilaterais como Afundo
+  repsRight?: number | string; // Para exercícios unilaterais como Afundo
+  actualWeightKg?: number | string;
   completedAt?: string;
 }
 
@@ -52,6 +60,9 @@ export interface WorkoutExercise {
   targetMuscleGroup: MuscleGroup;
   sets: WorkoutSet[];
   notes?: string;
+  repsRange?: string;
+  isUnilateral?: boolean;
+  isMultiarticular?: boolean;
 }
 
 export interface WorkoutRoutine {
@@ -63,6 +74,9 @@ export interface WorkoutRoutine {
   exercises: WorkoutExercise[];
   targetMuscleGroups: MuscleGroup[];
   color?: string;
+  planName?: string;
+  estimatedMinutes?: string; // ex: '60 a 75 min'
+  totalPlannedSets?: number;
 }
 
 export interface ActiveRestTimer {
@@ -81,6 +95,7 @@ export interface ActiveWorkoutSession {
   routineId: string;
   routineName: string;
   startTime: number;
+  isStarted?: boolean;
   pausedAt?: number;
   totalPausedDurationMs: number;
   currentExerciseIndex: number;
@@ -94,10 +109,13 @@ export interface CompletedExerciseLog {
   exerciseId: string;
   exerciseName: string;
   targetMuscleGroup: MuscleGroup;
+  isUnilateral?: boolean;
   completedSets: {
     setNumber: number;
     weightKg: number;
     reps: number;
+    repsLeft?: number;
+    repsRight?: number;
   }[];
 }
 
@@ -149,4 +167,25 @@ export interface PersonalRecord {
   maxWeightKg: number;
   maxVolumeSessionKg: number;
   dateAchieved: string;
+}
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  pinSalt: string;
+  pinHash: string;
+  passwordSalt: string;
+  passwordHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthSession {
+  userId: string;
+  name: string;
+  email: string;
+  token: string;
+  createdAt: number;
+  expiresAt: number;
 }

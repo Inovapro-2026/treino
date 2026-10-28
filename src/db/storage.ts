@@ -6,11 +6,14 @@ import {
   BodyMeasurement,
   UserSettings,
   PersonalRecord,
+  UserAccount,
+  AuthSession,
 } from '../types';
 import { DEFAULT_EXERCISES, DEFAULT_ROUTINES, DEFAULT_SETTINGS } from './defaultData';
+import { verifyValue } from '../utils/security';
 
 const DB_NAME = 'HyperPulse_Gym_DB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
   ROUTINES: 'routines',
@@ -20,6 +23,8 @@ const STORES = {
   MEASUREMENTS: 'measurements',
   SETTINGS: 'settings',
   SYNC_QUEUE: 'sync_queue',
+  ACCOUNTS: 'accounts',
+  AUTH: 'auth_session',
 } as const;
 
 function openDB(): Promise<IDBDatabase> {
@@ -65,6 +70,13 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORES.SYNC_QUEUE)) {
         db.createObjectStore(STORES.SYNC_QUEUE, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains(STORES.ACCOUNTS)) {
+        const store = db.createObjectStore(STORES.ACCOUNTS, { keyPath: 'id' });
+        store.createIndex('email', 'email', { unique: true });
+      }
+      if (!db.objectStoreNames.contains(STORES.AUTH)) {
+        db.createObjectStore(STORES.AUTH, { keyPath: 'key' });
       }
     };
   });
@@ -121,15 +133,40 @@ function fallbackStorage<T>(storeName: string, mode: IDBTransactionMode, _cb: an
 // ==================== ROUTINES ====================
 export async function getRoutines(): Promise<WorkoutRoutine[]> {
   try {
-    const routines = await performTx<WorkoutRoutine[]>(STORES.ROUTINES, 'readonly', (store) => store.getAll());
-    if (routines && routines.length > 0) {
-      return routines.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+    const existing = await performTx<WorkoutRoutine[]>(STORES.ROUTINES, 'readonly', (store) =>
+      store.getAll()
+    );
+
+    // Check if Smart Fit routines are already populated
+    const hasSmartFit = existing && existing.some((r) => r.id.startsWith('routine_smartfit_'));
+
+    if (!hasSmartFit) {
+      // Idempotently add/merge the Smart Fit routines without removing any custom user routines
+      const db = await openDB();
+      const tx = db.transaction(STORES.ROUTINES, 'readwrite');
+      const store = tx.objectStore(STORES.ROUTINES);
+      DEFAULT_ROUTINES.forEach((r) => store.put(r));
+      await new Promise<void>((resolve) => {
+        tx.oncomplete = () => resolve();
+      });
+
+      // Re-fetch merged routines
+      const merged = await performTx<WorkoutRoutine[]>(STORES.ROUTINES, 'readonly', (s) =>
+        s.getAll()
+      );
+      if (merged && merged.length > 0) {
+        return merged.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+      }
+    }
+
+    if (existing && existing.length > 0) {
+      return existing.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
     }
   } catch (e) {
-    console.warn('Error fetching routines', e);
+    console.warn('Error fetching routines, ensuring defaults', e);
   }
 
-  // Seed default routines
+  // Seed default routines if empty
   await saveRoutines(DEFAULT_ROUTINES);
   return DEFAULT_ROUTINES;
 }
@@ -156,9 +193,27 @@ export async function deleteRoutine(id: string): Promise<void> {
 // ==================== EXERCISES ====================
 export async function getExercises(): Promise<Exercise[]> {
   try {
-    const exercises = await performTx<Exercise[]>(STORES.EXERCISES, 'readonly', (store) => store.getAll());
-    if (exercises && exercises.length > 0) {
-      return exercises;
+    const existing = await performTx<Exercise[]>(STORES.EXERCISES, 'readonly', (store) =>
+      store.getAll()
+    );
+
+    if (existing && existing.length > 0) {
+      // Ensure all Smart Fit exercises are present without overwriting custom ones
+      const existingIds = new Set(existing.map((e) => e.id));
+      const missingDefaults = DEFAULT_EXERCISES.filter((e) => !existingIds.has(e.id));
+
+      if (missingDefaults.length > 0) {
+        const db = await openDB();
+        const tx = db.transaction(STORES.EXERCISES, 'readwrite');
+        const store = tx.objectStore(STORES.EXERCISES);
+        missingDefaults.forEach((ex) => store.put(ex));
+        await new Promise<void>((resolve) => {
+          tx.oncomplete = () => resolve();
+        });
+        return [...existing, ...missingDefaults];
+      }
+
+      return existing;
     }
   } catch (e) {
     console.warn('Error fetching exercises', e);
@@ -430,9 +485,148 @@ export async function clearAllData(): Promise<void> {
   tx.objectStore(STORES.MEASUREMENTS).clear();
   tx.objectStore(STORES.SETTINGS).clear();
 
-  localStorage.clear();
+  localStorage.removeItem('hp_active_session');
+  localStorage.removeItem('hp_settings');
 
   return new Promise((resolve) => {
     tx.oncomplete = () => resolve();
   });
+}
+
+// ==================== USER ACCOUNTS & AUTH ====================
+export async function getUserAccounts(): Promise<UserAccount[]> {
+  try {
+    const accounts = await performTx<UserAccount[]>(STORES.ACCOUNTS, 'readonly', (store) =>
+      store.getAll()
+    );
+    if (accounts && accounts.length > 0) {
+      return accounts;
+    }
+  } catch (e) {
+    console.warn('Error fetching accounts from IndexedDB', e);
+  }
+
+  // LocalStorage fallback
+  try {
+    const raw = localStorage.getItem('hp_user_accounts');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getUserAccountByEmail(email: string): Promise<UserAccount | null> {
+  const normalized = email.trim().toLowerCase();
+  const accounts = await getUserAccounts();
+  return accounts.find((a) => a.email.toLowerCase() === normalized) || null;
+}
+
+export async function saveUserAccount(account: UserAccount): Promise<void> {
+  try {
+    const accounts = await getUserAccounts();
+    const existingIdx = accounts.findIndex((a) => a.id === account.id || a.email.toLowerCase() === account.email.toLowerCase());
+    if (existingIdx >= 0) {
+      accounts[existingIdx] = account;
+    } else {
+      accounts.push(account);
+    }
+    localStorage.setItem('hp_user_accounts', JSON.stringify(accounts));
+
+    await performTx(STORES.ACCOUNTS, 'readwrite', (store) => store.put(account));
+  } catch (e) {
+    console.warn('Fallback saving user account', e);
+  }
+}
+
+export async function updateUserAccountPin(email: string, pinHash: string, pinSalt: string): Promise<boolean> {
+  const account = await getUserAccountByEmail(email);
+  if (!account) return false;
+
+  account.pinHash = pinHash;
+  account.pinSalt = pinSalt;
+  account.updatedAt = new Date().toISOString();
+
+  await saveUserAccount(account);
+  return true;
+}
+
+export async function getActiveAuthSession(): Promise<AuthSession | null> {
+  try {
+    const sessionRes = await performTx<{ key: string; value: AuthSession }>(
+      STORES.AUTH,
+      'readonly',
+      (store) => store.get('current_session')
+    );
+    if (sessionRes && sessionRes.value) {
+      // Check if session has expired (30 days validity)
+      if (sessionRes.value.expiresAt > Date.now()) {
+        return sessionRes.value;
+      }
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  try {
+    const raw = localStorage.getItem('hp_auth_session');
+    if (raw) {
+      const session = JSON.parse(raw) as AuthSession;
+      if (session && session.expiresAt > Date.now()) {
+        return session;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+export async function saveActiveAuthSession(session: AuthSession | null): Promise<void> {
+  try {
+    if (!session) {
+      localStorage.removeItem('hp_auth_session');
+      await performTx(STORES.AUTH, 'readwrite', (store) => store.delete('current_session'));
+    } else {
+      localStorage.setItem('hp_auth_session', JSON.stringify(session));
+      await performTx(STORES.AUTH, 'readwrite', (store) =>
+        store.put({ key: 'current_session', value: session })
+      );
+    }
+  } catch (e) {
+    if (!session) {
+      localStorage.removeItem('hp_auth_session');
+    } else {
+      localStorage.setItem('hp_auth_session', JSON.stringify(session));
+    }
+  }
+}
+
+/**
+ * Verify a 6-digit numeric PIN against registered accounts.
+ * Returns the matching account if valid.
+ */
+export async function verifyPinLogin(
+  pin: string
+): Promise<{ success: boolean; account?: UserAccount; error?: string }> {
+  const accounts = await getUserAccounts();
+
+  if (accounts.length === 0) {
+    return {
+      success: false,
+      error: 'Nenhuma conta cadastrada ainda no dispositivo. Crie seu cadastro para continuar.',
+    };
+  }
+
+  for (const acc of accounts) {
+    const isValid = await verifyValue(pin, acc.pinSalt, acc.pinHash);
+    if (isValid) {
+      return { success: true, account: acc };
+    }
+  }
+
+  return {
+    success: false,
+    error: 'Código de acesso incorreto. Verifique os 6 dígitos digitados.',
+  };
 }
