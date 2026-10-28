@@ -3,6 +3,8 @@ import { X, UserPlus, Eye, EyeOff, ShieldCheck, AlertCircle, CheckCircle2 } from
 import { UserAccount, AuthSession } from '../../types';
 import { getUserAccountByEmail, saveUserAccount, saveActiveAuthSession } from '../../db/storage';
 import { generateSalt, hashStringWithSalt } from '../../utils/security';
+import { supabase } from '../../lib/supabase';
+import { syncAllWithCloud } from '../../services/syncService';
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -104,6 +106,36 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, onClose, o
         updatedAt: now,
       };
 
+      // Attempt Supabase Auth registration
+      try {
+        const { data: authData } = await supabase.auth.signUp({
+          email: trimmedEmail,
+          password: password,
+          options: {
+            data: {
+              name: trimmedName,
+              pin_salt: pinSalt,
+              pin_hash: pinHash,
+            },
+          },
+        });
+
+        if (authData?.user) {
+          newAccount.id = authData.user.id;
+          // Attempt upserting profile in Supabase table
+          await supabase.from('profiles').upsert({
+            id: authData.user.id,
+            email: trimmedEmail,
+            name: trimmedName,
+            pin_salt: pinSalt,
+            pin_hash: pinHash,
+            updated_at: now,
+          });
+        }
+      } catch (cloudErr) {
+        console.warn('Cloud registration sync notice:', cloudErr);
+      }
+
       await saveUserAccount(newAccount);
 
       // Create active session
@@ -117,6 +149,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({ isOpen, onClose, o
       };
 
       await saveActiveAuthSession(session);
+      
+      // Trigger background sync with cloud
+      syncAllWithCloud();
+
       onSuccess(session);
       onClose();
     } catch (err) {

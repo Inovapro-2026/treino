@@ -11,6 +11,7 @@ import {
   BodyMeasurement,
   UserSettings,
   ActiveWorkoutSession,
+  AuthSession,
 } from './types';
 import {
   getRoutines,
@@ -28,6 +29,8 @@ import {
   deleteBodyMeasurement,
   getSettings,
   saveSettings,
+  getActiveAuthSession,
+  saveActiveAuthSession,
 } from './db/storage';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
@@ -41,8 +44,10 @@ import { SettingsView } from './components/settings/SettingsView';
 import { ActiveWorkoutModal } from './components/workout/ActiveWorkoutModal';
 import { AddMeasurementModal } from './components/measurements/AddMeasurementModal';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
+import { LoginView } from './components/auth/LoginView';
 import { DEFAULT_SETTINGS } from './db/defaultData';
 import { Dumbbell } from 'lucide-react';
+import { syncAllWithCloud, subscribeToSyncStatus, SyncStatus } from './services/syncService';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -56,6 +61,10 @@ export default function App() {
   const [isNewMeasurementOpen, setIsNewMeasurementOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Authentication & Supabase Sync states
+  const [currentAuthSession, setCurrentAuthSession] = useState<AuthSession | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({ state: 'idle', lastSyncedAt: null, pendingQueueCount: 0 });
+
   // Load all persistent data on startup
   const loadData = useCallback(async () => {
     try {
@@ -66,6 +75,7 @@ export default function App() {
         loadedMeasurements,
         loadedSettings,
         loadedActiveSession,
+        loadedAuthSession,
       ] = await Promise.all([
         getRoutines(),
         getExercises(),
@@ -73,6 +83,7 @@ export default function App() {
         getBodyMeasurements(),
         getSettings(),
         getActiveSession(),
+        getActiveAuthSession(),
       ]);
 
       setRoutines(loadedRoutines);
@@ -80,6 +91,12 @@ export default function App() {
       setLogs(loadedLogs);
       setMeasurements(loadedMeasurements);
       setSettings(loadedSettings);
+      setCurrentAuthSession(loadedAuthSession);
+
+      if (loadedAuthSession) {
+        // Trigger background sync with Supabase
+        syncAllWithCloud();
+      }
 
       if (loadedActiveSession) {
         setActiveSession(loadedActiveSession);
@@ -96,6 +113,19 @@ export default function App() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Subscribe to real-time sync status
+  useEffect(() => {
+    const unsub = subscribeToSyncStatus((status) => {
+      setSyncStatus(status);
+    });
+    return unsub;
+  }, []);
+
+  const handleLogout = async () => {
+    await saveActiveAuthSession(null);
+    setCurrentAuthSession(null);
+  };
 
   // Calculate workout streak in weeks meeting goal
   const streakCount = React.useMemo(() => {
@@ -294,6 +324,18 @@ export default function App() {
     );
   }
 
+  // Auth Guard: Unauthenticated users are presented with the 6-digit numeric login screen
+  if (!currentAuthSession) {
+    return (
+      <LoginView
+        onLoginSuccess={(session) => {
+          setCurrentAuthSession(session);
+          loadData();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-lime-400 selection:text-zinc-950 font-sans">
       {/* Top Navbar */}
@@ -302,6 +344,10 @@ export default function App() {
         activeSession={activeSession}
         onResumeWorkout={() => setIsWorkoutModalOpen(true)}
         streakDays={streakCount}
+        currentUser={currentAuthSession}
+        onLogout={handleLogout}
+        syncStatus={syncStatus}
+        onSyncClick={() => syncAllWithCloud()}
       />
 
       {/* Main Layout Container */}
@@ -311,6 +357,8 @@ export default function App() {
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           streakCount={streakCount}
+          currentUser={currentAuthSession}
+          onLogout={handleLogout}
         />
 
         {/* Content View */}

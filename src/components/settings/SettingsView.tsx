@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   Clock,
@@ -10,6 +10,11 @@ import {
   Check,
   FileSpreadsheet,
   FileCode,
+  RefreshCw,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  X,
 } from 'lucide-react';
 import { UserSettings } from '../../types';
 import {
@@ -21,6 +26,8 @@ import {
 import { playCompleteChime, triggerHaptic } from '../../utils/audio';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { PWAInstallButton } from '../common/PWAInstallButton';
+import { syncAllWithCloud, subscribeToSyncStatus, SyncStatus } from '../../services/syncService';
+import { SqlMigrationModal } from './SqlMigrationModal';
 
 interface SettingsViewProps {
   settings: UserSettings;
@@ -44,11 +51,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>(settings.weightUnit || 'kg');
   const [weeklyGoal, setWeeklyGoal] = useState(settings.weeklyWorkoutGoal || 5);
 
-  const [supabaseUrl, setSupabaseUrl] = useState(settings.supabaseUrl || '');
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(settings.supabaseAnonKey || '');
+  const [supabaseUrl, setSupabaseUrl] = useState(
+    settings.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || 'https://hhokoredbiznitmztizy.supabase.co'
+  );
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(
+    settings.supabaseAnonKey || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  );
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showSqlModal, setShowSqlModal] = useState(false);
   const [saveToast, setSaveToast] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({ state: 'idle', lastSyncedAt: null, pendingQueueCount: 0 });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToSyncStatus((status) => {
+      setSyncStatus(status);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    setSyncToast(null);
+    try {
+      const success = await syncAllWithCloud();
+      if (success) {
+        setSyncToast('Sincronização com Supabase concluída!');
+        onDataReload();
+      } else {
+        setSyncToast('Sincronização pendente ou offline. Dados salvos localmente.');
+      }
+    } catch {
+      setSyncToast('Erro ao sincronizar com o Supabase.');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncToast(null), 3500);
+    }
+  };
 
   const handleSave = () => {
     const updated: UserSettings = {
@@ -330,25 +371,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* Cloud Sync (Supabase) */}
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl space-y-4">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Cloud className="w-5 h-5 text-lime-400" />
-              Sincronização em Nuvem (Supabase)
+              Sincronização em Nuvem (Supabase DB)
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Por padrão, o aplicativo funciona de forma autônoma e offline via IndexedDB. Você pode conectar seu projeto Supabase para backup contínuo.
+              Conexão com PostgreSQL e Row Level Security (RLS) para persistência e recuperação de treinos entre dispositivos.
             </p>
           </div>
 
-          <span
-            className={`rounded-lg px-2.5 py-1 text-xs font-bold ${
-              supabaseUrl ? 'bg-lime-400/20 text-lime-400' : 'bg-zinc-800 text-zinc-400'
-            }`}
-          >
-            {supabaseUrl ? 'Nuvem Conectada' : 'Modo Local (Offline)'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className={`rounded-xl px-3 py-1 text-xs font-bold border ${
+                syncStatus.state === 'synced'
+                  ? 'bg-lime-400/10 border-lime-400/30 text-lime-400'
+                  : syncStatus.state === 'syncing'
+                  ? 'bg-blue-400/10 border-blue-400/30 text-blue-400'
+                  : syncStatus.state === 'offline'
+                  ? 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                  : 'bg-amber-400/10 border-amber-400/30 text-amber-400'
+              }`}
+            >
+              {syncStatus.state === 'synced'
+                ? 'Nuvem Conectada & Sincronizada'
+                : syncStatus.state === 'syncing'
+                ? 'Sincronizando com Supabase...'
+                : syncStatus.state === 'offline'
+                ? 'Modo Local (Offline)'
+                : `${syncStatus.pendingQueueCount || 1} itens pendentes`}
+            </span>
+          </div>
         </div>
+
+        {syncToast && (
+          <div className="rounded-xl border border-lime-500/30 bg-lime-500/10 p-3 text-xs font-bold text-lime-400 flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>{syncToast}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           <div>
@@ -359,14 +421,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               type="url"
               value={supabaseUrl}
               onChange={(e) => setSupabaseUrl(e.target.value)}
-              placeholder="https://xyzcompany.supabase.co"
+              placeholder="https://hhokoredbiznitmztizy.supabase.co"
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-white focus:border-lime-400 focus:outline-hidden"
             />
           </div>
 
           <div>
             <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-              Chave Anônima (Anon Key)
+              Chave Pública Anônima (Anon Key)
             </label>
             <input
               type="password"
@@ -376,6 +438,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-white focus:border-lime-400 focus:outline-hidden"
             />
           </div>
+        </div>
+
+        {/* Sync Actions & SQL Modal button */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-zinc-800/80">
+          <button
+            type="button"
+            onClick={() => setShowSqlModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-xs font-bold text-zinc-300 hover:text-white hover:border-lime-400 transition"
+          >
+            <FileCode className="w-4 h-4 text-lime-400" />
+            <span>Ver Script de Migração SQL</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="flex items-center justify-center gap-2 rounded-xl bg-lime-400 px-4 py-2.5 text-xs font-black text-zinc-950 hover:bg-lime-300 transition active:scale-95 disabled:opacity-50 shadow-md shadow-lime-950/20"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'}</span>
+          </button>
         </div>
       </div>
 
@@ -444,6 +528,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         isDestructive={true}
         onConfirm={handleClearAll}
         onCancel={() => setShowClearConfirm(false)}
+      />
+
+      <SqlMigrationModal
+        isOpen={showSqlModal}
+        onClose={() => setShowSqlModal(false)}
       />
     </div>
   );

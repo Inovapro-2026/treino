@@ -14,6 +14,7 @@ import {
   saveSettings,
   getActiveSession,
   saveActiveSession,
+  onStorageMutation,
 } from '../db/storage';
 import {
   WorkoutRoutine,
@@ -22,6 +23,15 @@ import {
   UserSettings,
   ActiveWorkoutSession,
 } from '../types';
+
+let isPullingFromCloud = false;
+
+// Listen to local storage mutations and enqueue for cloud sync
+onStorageMutation((type, payload) => {
+  if (!isPullingFromCloud) {
+    enqueueOfflineMutation(type, payload);
+  }
+});
 
 export type SyncState = 'idle' | 'syncing' | 'synced' | 'offline' | 'error';
 
@@ -270,6 +280,7 @@ export async function syncAllWithCloud(): Promise<boolean> {
   currentStatus.state = 'syncing';
   notifyListeners();
 
+  isPullingFromCloud = true;
   try {
     // 1. Flush offline queue first
     await processSyncQueue();
@@ -422,6 +433,8 @@ export async function syncAllWithCloud(): Promise<boolean> {
     currentStatus.message = err?.message || 'Erro na sincronização.';
     notifyListeners();
     return false;
+  } finally {
+    isPullingFromCloud = false;
   }
 }
 

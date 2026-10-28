@@ -27,6 +27,35 @@ const STORES = {
   AUTH: 'auth_session',
 } as const;
 
+export type StorageMutationType =
+  | 'routine'
+  | 'routine_delete'
+  | 'log'
+  | 'measurement'
+  | 'settings'
+  | 'active_session';
+
+type StorageMutationListener = (type: StorageMutationType, payload: any) => void;
+const mutationListeners: StorageMutationListener[] = [];
+
+export function onStorageMutation(listener: StorageMutationListener): () => void {
+  mutationListeners.push(listener);
+  return () => {
+    const idx = mutationListeners.indexOf(listener);
+    if (idx >= 0) mutationListeners.splice(idx, 1);
+  };
+}
+
+export function notifyMutation(type: StorageMutationType, payload: any) {
+  mutationListeners.forEach((l) => {
+    try {
+      l(type, payload);
+    } catch (e) {
+      console.warn('Storage mutation listener error', e);
+    }
+  });
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
@@ -184,10 +213,12 @@ export async function saveRoutines(routines: WorkoutRoutine[]): Promise<void> {
 
 export async function saveRoutine(routine: WorkoutRoutine): Promise<void> {
   await performTx(STORES.ROUTINES, 'readwrite', (store) => store.put(routine));
+  notifyMutation('routine', routine);
 }
 
 export async function deleteRoutine(id: string): Promise<void> {
   await performTx(STORES.ROUTINES, 'readwrite', (store) => store.delete(id));
+  notifyMutation('routine_delete', { id });
 }
 
 // ==================== EXERCISES ====================
@@ -271,6 +302,7 @@ export async function saveActiveSession(session: ActiveWorkoutSession | null): P
       localStorage.setItem('hp_active_session', JSON.stringify({ ...session, id: 'current' }));
     }
   }
+  notifyMutation('active_session', session);
 }
 
 // ==================== WORKOUT LOGS ====================
@@ -288,6 +320,7 @@ export async function getWorkoutLogs(): Promise<WorkoutLog[]> {
 
 export async function saveWorkoutLog(log: WorkoutLog): Promise<void> {
   await performTx(STORES.SESSIONS, 'readwrite', (store) => store.put(log));
+  notifyMutation('log', log);
 }
 
 export async function deleteWorkoutLog(id: string): Promise<void> {
@@ -313,6 +346,7 @@ export async function getBodyMeasurements(): Promise<BodyMeasurement[]> {
 
 export async function saveBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
   await performTx(STORES.MEASUREMENTS, 'readwrite', (store) => store.put(measurement));
+  notifyMutation('measurement', measurement);
 }
 
 export async function deleteBodyMeasurement(id: string): Promise<void> {
@@ -346,6 +380,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
   } catch (e) {
     localStorage.setItem('hp_settings', JSON.stringify(settings));
   }
+  notifyMutation('settings', settings);
 }
 
 // ==================== PERSONAL RECORDS (PRs) ====================

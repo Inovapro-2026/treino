@@ -9,11 +9,14 @@ import {
   Clock,
   Sparkles,
   ShieldCheck,
+  Cloud,
 } from 'lucide-react';
 import { AuthSession, UserAccount } from '../../types';
 import { PinInput } from './PinInput';
 import { RegisterModal } from './RegisterModal';
 import { PinRecoveryModal } from './PinRecoveryModal';
+import { CloudSyncLoginModal } from './CloudSyncLoginModal';
+import { syncAllWithCloud } from '../../services/syncService';
 import {
   verifyPinLogin,
   getUserAccounts,
@@ -41,6 +44,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
+  const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false);
 
   const [lockoutWait, setLockoutWait] = useState(0);
   const [hasExistingAccounts, setHasExistingAccounts] = useState(true);
@@ -103,6 +107,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
           };
           await saveActiveAuthSession(session);
+          syncAllWithCloud();
           onLoginSuccess(session);
         } else {
           // Record failed attempt
@@ -272,12 +277,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <span>Criar cadastro</span>
             </button>
 
-            {/* "Esqueci meu código" */}
-            <div className="text-center pt-1">
+            {/* "Esqueci meu código" & "Sincronizar outro aparelho" */}
+            <div className="flex flex-col items-center gap-2 pt-1 text-center">
+              <button
+                type="button"
+                onClick={() => setIsCloudSyncOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-lime-400 hover:text-lime-300 transition"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                <span>Sincronizar conta da nuvem (Outro aparelho)</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsRecoveryOpen(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-lime-400 transition"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-300 transition"
               >
                 <KeyRound className="w-3.5 h-3.5" />
                 <span>Esqueci meu código de acesso</span>
@@ -313,7 +327,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
       {/* Footer */}
       <footer className="relative z-10 text-center text-xs text-zinc-500 py-2">
-        <p>HyperPulse Pro &bull; Segurança biométrica e criptografia local com salt</p>
+        <p>HyperPulse Pro &bull; Segurança biométrica e sincronização em nuvem Supabase</p>
       </footer>
 
       {/* Modals */}
@@ -325,6 +339,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         }}
         onSuccess={(session) => {
           setIsRegisterOpen(false);
+          onLoginSuccess(session);
+        }}
+      />
+
+      <CloudSyncLoginModal
+        isOpen={isCloudSyncOpen}
+        onClose={() => {
+          setIsCloudSyncOpen(false);
+          getUserAccounts().then((accs) => setHasExistingAccounts(accs.length > 0));
+        }}
+        onSuccess={(session) => {
+          setIsCloudSyncOpen(false);
           onLoginSuccess(session);
         }}
       />

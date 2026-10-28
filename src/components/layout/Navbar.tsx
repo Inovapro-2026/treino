@@ -1,7 +1,18 @@
 import React from 'react';
-import { Dumbbell, Play, Flame, LogOut, User } from 'lucide-react';
+import {
+  Dumbbell,
+  Play,
+  Flame,
+  LogOut,
+  User,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  AlertCircle,
+} from 'lucide-react';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { UserSettings, ActiveWorkoutSession, AuthSession } from '../../types';
+import { SyncStatus } from '../../services/syncService';
 
 interface NavbarProps {
   settings: UserSettings;
@@ -10,6 +21,8 @@ interface NavbarProps {
   streakDays: number;
   currentUser?: AuthSession | null;
   onLogout?: () => void;
+  syncStatus?: SyncStatus;
+  onSyncClick?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -19,6 +32,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   streakDays,
   currentUser,
   onLogout,
+  syncStatus,
+  onSyncClick,
 }) => {
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md px-4 py-3">
@@ -49,6 +64,45 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Flame className="w-3.5 h-3.5 fill-current" />
               <span>{streakDays} {streakDays === 1 ? 'sem' : 'sems'}</span>
             </div>
+          )}
+
+          {/* Supabase Cloud Sync Status Pill */}
+          {syncStatus && (
+            <button
+              onClick={onSyncClick}
+              title={
+                syncStatus.state === 'synced'
+                  ? 'Sincronizado com o Supabase. Clique para sincronizar agora.'
+                  : syncStatus.state === 'syncing'
+                  ? 'Sincronizando dados com o Supabase...'
+                  : syncStatus.state === 'offline'
+                  ? 'Modo offline. Alterações salvas no aparelho.'
+                  : 'Fila pendente de sincronização. Clique para tentar agora.'
+              }
+              className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold transition border ${
+                syncStatus.state === 'synced'
+                  ? 'border-lime-500/30 bg-lime-500/10 text-lime-400 hover:bg-lime-500/20'
+                  : syncStatus.state === 'syncing'
+                  ? 'border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20'
+                  : syncStatus.state === 'offline'
+                  ? 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+              }`}
+            >
+              {syncStatus.state === 'synced' && <Cloud className="w-3.5 h-3.5" />}
+              {syncStatus.state === 'syncing' && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+              {syncStatus.state === 'offline' && <CloudOff className="w-3.5 h-3.5" />}
+              {syncStatus.state === 'error' && <AlertCircle className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">
+                {syncStatus.state === 'synced'
+                  ? 'Nuvem OK'
+                  : syncStatus.state === 'syncing'
+                  ? 'Sincronizando'
+                  : syncStatus.state === 'offline'
+                  ? 'Offline'
+                  : `${syncStatus.pendingQueueCount || 1} pendente`}
+              </span>
+            </button>
           )}
 
           {/* Active Workout Resume pill if workout is minimized in background */}
