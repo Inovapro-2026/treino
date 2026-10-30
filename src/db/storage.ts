@@ -161,36 +161,136 @@ function fallbackStorage<T>(storeName: string, mode: IDBTransactionMode, _cb: an
 }
 
 // ==================== ROUTINES ====================
+
+export const LEGACY_ROUTINE_IDS = new Set([
+  'routine_domingo',
+  'routine_segunda',
+  'routine_terca',
+  'routine_quarta',
+  'routine_quinta',
+  'routine_sexta',
+  'routine_sabado',
+  'routine_0',
+  'routine_1',
+  'routine_2',
+  'routine_3',
+  'routine_4',
+  'routine_5',
+  'routine_6',
+  'routine_seg',
+  'routine_ter',
+  'routine_qua',
+  'routine_qui',
+  'routine_sex',
+  'routine_sab',
+  'routine_dom',
+]);
+
+/**
+ * Identifies old/legacy placeholder routines that were replaced by the official
+ * Smart Fit hypertrophy sheet, preventing duplicates on user devices.
+ */
+export function isLegacyRoutine(routine?: {
+  id: string;
+  name?: string;
+  totalPlannedSets?: number;
+  estimatedMinutes?: string;
+}): boolean {
+  if (!routine || !routine.id) return false;
+
+  // Explicit match against known legacy routine IDs
+  if (LEGACY_ROUTINE_IDS.has(routine.id)) return true;
+
+  // Custom user-created routines start with custom_routine_ or routine_copy_
+  const isCustom = routine.id.startsWith('custom_routine_') || routine.id.startsWith('routine_copy_');
+  if (isCustom) return false;
+
+  // Official routines all start with routine_smartfit_
+  if (!routine.id.startsWith('routine_smartfit_')) {
+    return true;
+  }
+
+  // Legacy signatures (old names or old set totals like 14 on Sunday, 15 on Tuesday/Thursday)
+  if (
+    routine.name === 'Quinta: Treino de Membros Superiores' ||
+    routine.name === 'Terça: Pernas com foco em Quadríceps' ||
+    (routine.name?.includes('Posteriores') && routine.totalPlannedSets === 14) ||
+    (routine.name?.includes('Pernas') && routine.totalPlannedSets === 15) ||
+    (routine.name?.includes('Superiores') && routine.totalPlannedSets === 15) ||
+    routine.estimatedMinutes === '60-75 min'
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function getRoutines(): Promise<WorkoutRoutine[]> {
   try {
     const existing = await performTx<WorkoutRoutine[]>(STORES.ROUTINES, 'readonly', (store) =>
       store.getAll()
     );
 
-    // Check if Smart Fit routines are already populated
-    const hasSmartFit = existing && existing.some((r) => r.id.startsWith('routine_smartfit_'));
-
-    if (!hasSmartFit) {
-      // Idempotently add/merge the Smart Fit routines without removing any custom user routines
-      const db = await openDB();
-      const tx = db.transaction(STORES.ROUTINES, 'readwrite');
-      const store = tx.objectStore(STORES.ROUTINES);
-      DEFAULT_ROUTINES.forEach((r) => store.put(r));
-      await new Promise<void>((resolve) => {
-        tx.oncomplete = () => resolve();
-      });
-
-      // Re-fetch merged routines
-      const merged = await performTx<WorkoutRoutine[]>(STORES.ROUTINES, 'readonly', (s) =>
-        s.getAll()
-      );
-      if (merged && merged.length > 0) {
-        return merged.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
-      }
-    }
-
     if (existing && existing.length > 0) {
-      return existing.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+      // 1. Identify and purge any legacy routine IDs from IndexedDB
+      const legacyFound = existing.filter((r) => isLegacyRoutine(r));
+      if (legacyFound.length > 0) {
+        try {
+          const db = await openDB();
+          const tx = db.transaction(STORES.ROUTINES, 'readwrite');
+          const store = tx.objectStore(STORES.ROUTINES);
+          legacyFound.forEach((leg) => store.delete(leg.id));
+          await new Promise<void>((resolve) => {
+            tx.oncomplete = () => resolve();
+          });
+        } catch (delErr) {
+          console.warn('Error purging legacy routines from IndexedDB:', delErr);
+        }
+      }
+
+      // 2. Filter out legacy routines
+      const nonLegacy = existing.filter((r) => !isLegacyRoutine(r));
+
+      // 3. Ensure all 7 official Smart Fit routines exist
+      const existingSmartFitIds = new Set(nonLegacy.map((r) => r.id));
+      const missingSmartFit = DEFAULT_ROUTINES.filter((r) => !existingSmartFitIds.has(r.id));
+
+      if (missingSmartFit.length > 0) {
+        try {
+          const db = await openDB();
+          const tx = db.transaction(STORES.ROUTINES, 'readwrite');
+          const store = tx.objectStore(STORES.ROUTINES);
+          missingSmartFit.forEach((r) => store.put(r));
+          await new Promise<void>((resolve) => {
+            tx.oncomplete = () => resolve();
+          });
+          nonLegacy.push(...missingSmartFit);
+        } catch (putErr) {
+          console.warn('Error seeding missing Smart Fit routines:', putErr);
+        }
+      }
+
+      // 4. Final deduplication: keep only 1 official routine per day of week, plus any custom user routines
+      const deduplicated: WorkoutRoutine[] = [];
+      const seenKeys = new Set<string>();
+
+      for (const r of nonLegacy) {
+        // Unique key: official routines by dayOfWeek, custom routines by id
+        const key = r.id.startsWith('routine_smartfit_') ? `sf_day_${r.dayOfWeek}` : r.id;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          deduplicated.push(r);
+        } else {
+          // Stale duplicate: delete from IndexedDB
+          try {
+            await performTx(STORES.ROUTINES, 'readwrite', (s) => s.delete(r.id));
+          } catch {
+            // Ignore deletion error
+          }
+        }
+      }
+
+      return deduplicated.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
     }
   } catch (e) {
     console.warn('Error fetching routines, ensuring defaults', e);
@@ -202,10 +302,11 @@ export async function getRoutines(): Promise<WorkoutRoutine[]> {
 }
 
 export async function saveRoutines(routines: WorkoutRoutine[]): Promise<void> {
+  const cleanRoutines = routines.filter((r) => !isLegacyRoutine(r));
   const db = await openDB();
   const tx = db.transaction(STORES.ROUTINES, 'readwrite');
   const store = tx.objectStore(STORES.ROUTINES);
-  routines.forEach((r) => store.put(r));
+  cleanRoutines.forEach((r) => store.put(r));
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);

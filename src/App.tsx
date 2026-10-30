@@ -31,6 +31,7 @@ import {
   saveSettings,
   getActiveAuthSession,
   saveActiveAuthSession,
+  isLegacyRoutine,
 } from './db/storage';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
@@ -89,7 +90,8 @@ export default function App() {
         getActiveAuthSession(),
       ]);
 
-      setRoutines(loadedRoutines);
+      const cleanRoutines = (loadedRoutines || []).filter((r) => !isLegacyRoutine(r));
+      setRoutines(cleanRoutines);
       setExercises(loadedExercises);
       setLogs(loadedLogs);
       setMeasurements(loadedMeasurements);
@@ -514,30 +516,32 @@ export default function App() {
               )}
 
               <div className="max-h-64 overflow-y-auto space-y-2">
-                {routines.filter((r) => !r.isRestDay).map((routine) => (
-                  <button
-                    key={routine.id}
-                    onClick={() => {
-                      handleStartWorkout(routine);
-                      setIsWorkoutSelectOpen(false);
-                    }}
-                    className="w-full flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-left transition hover:border-lime-400/50 hover:bg-zinc-900"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-lime-400">
-                      <Dumbbell className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-white truncate">{routine.name}</p>
-                      <p className="text-xs text-zinc-400">
-                        {routine.exercises.reduce((acc, ex) => acc + ex.sets.length, 0)} séries · {routine.estimatedMinutes || '60-75 min'}
-                      </p>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-zinc-500" />
-                  </button>
-                ))}
+                {routines
+                  .filter((r) => !r.isRestDay && !isLegacyRoutine(r))
+                  .map((routine) => (
+                    <button
+                      key={routine.id}
+                      onClick={() => {
+                        handleStartWorkout(routine);
+                        setIsWorkoutSelectOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-left transition hover:border-lime-400/50 hover:bg-zinc-900"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-lime-400">
+                        <Dumbbell className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-white truncate">{routine.name}</p>
+                        <p className="text-xs text-zinc-400">
+                          {routine.exercises.reduce((acc, ex) => acc + ex.sets.length, 0)} séries · {routine.estimatedMinutes || '60 a 75 min'}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-zinc-500" />
+                    </button>
+                  ))}
               </div>
 
-              {routines.filter((r) => !r.isRestDay).length === 0 && (
+              {routines.filter((r) => !r.isRestDay && !isLegacyRoutine(r)).length === 0 && (
                 <div className="text-center py-8 text-zinc-400">
                   <Dumbbell className="w-10 h-10 mx-auto text-zinc-600 mb-2" />
                   <p className="font-semibold text-zinc-300">Nenhuma ficha de treino cadastrada</p>

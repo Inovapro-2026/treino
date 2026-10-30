@@ -40,29 +40,29 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </div>
           <button
             onClick={onCancel}
-            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+            className="rounded-lg p-2 text-white hover:bg-zinc-800 transition"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <p className="mt-3 text-sm text-zinc-300 leading-relaxed">{description}</p>
+        <p className="mt-3 text-sm text-white leading-relaxed">{description}</p>
 
-        <div className="mt-6 flex items-center justify-end gap-3">
+        <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-xl border border-zinc-700 bg-zinc-800/80 px-4 py-2.5 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-700"
+            className="min-h-[52px] h-[52px] px-5 rounded-xl border border-zinc-700 bg-zinc-800 text-sm font-bold text-white transition hover:bg-zinc-700 active:scale-95 flex items-center justify-center"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`rounded-xl px-5 py-2.5 text-sm font-bold transition active:scale-95 ${
+            className={`min-h-[52px] h-[52px] px-6 rounded-xl text-sm font-bold transition active:scale-95 flex items-center justify-center ${
               isDestructive
-                ? 'bg-red-600 text-white hover:bg-red-500 shadow-sm shadow-red-950/30'
-                : 'bg-lime-400 text-zinc-950 hover:bg-lime-300 shadow-sm shadow-lime-950/30'
+                ? 'bg-red-600 text-white hover:bg-red-500 shadow-md shadow-red-950/40'
+                : 'bg-lime-400 text-zinc-950 hover:bg-lime-300 shadow-md shadow-lime-950/40'
             }`}
           >
             {confirmLabel}

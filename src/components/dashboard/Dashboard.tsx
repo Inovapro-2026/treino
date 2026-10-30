@@ -29,6 +29,7 @@ import {
   SHORT_DAY_NAMES,
   MUSCLE_GROUP_LABELS,
 } from '../../utils/formatters';
+import { isLegacyRoutine } from '../../db/storage';
 
 interface DashboardProps {
   routines: WorkoutRoutine[];
@@ -56,8 +57,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const today = new Date();
   const currentDayOfWeek = today.getDay(); // 0 = Domingo, 1 = Segunda...
 
+  // Filter out any legacy routines to prevent duplicates
+  const cleanRoutines = React.useMemo(
+    () => routines.filter((r) => !isLegacyRoutine(r)),
+    [routines]
+  );
+
   // Identify today's scheduled workout
-  const todayRoutine = routines.find((r) => r.dayOfWeek === currentDayOfWeek);
+  const todayRoutine = cleanRoutines.find((r) => r.dayOfWeek === currentDayOfWeek);
 
   // If today is rest day or completed, find next scheduled workout day
   const nextTrainingRoutine = React.useMemo(() => {
@@ -66,11 +73,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
     for (let offset = 1; offset <= 7; offset++) {
       const nextDay = (currentDayOfWeek + offset) % 7;
-      const r = routines.find((item) => item.dayOfWeek === nextDay);
+      const r = cleanRoutines.find((item) => item.dayOfWeek === nextDay);
       if (r && !r.isRestDay) return r;
     }
-    return routines.find((r) => !r.isRestDay) || routines[0];
-  }, [routines, todayRoutine, currentDayOfWeek]);
+    return cleanRoutines.find((r) => !r.isRestDay) || cleanRoutines[0];
+  }, [cleanRoutines, todayRoutine, currentDayOfWeek]);
 
   // Check if today's workout was already completed today
   const todayDateString = today.toISOString().split('T')[0];

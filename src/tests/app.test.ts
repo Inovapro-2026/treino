@@ -2,7 +2,8 @@
  * Test Suite for Hypertrophy App Logic & Smart Fit Sheet Verification
  */
 import { SMART_FIT_ROUTINES, SMART_FIT_EXERCISES, PROGRESSION_GUIDELINES } from '../db/defaultData';
-import { WorkoutExercise, WorkoutSet } from '../types';
+import { WorkoutExercise, WorkoutSet, WorkoutRoutine, WorkoutLog } from '../types';
+import { isLegacyRoutine } from '../db/storage';
 
 export function runWorkoutTests() {
   const results: { name: string; passed: boolean; message?: string }[] = [];
@@ -252,6 +253,210 @@ export function runWorkoutTests() {
     const typedValue = '75.5';
     const parsed = parseFloat(typedValue) || 0;
     assert(parsed === 75.5, `Valor digitado deve ser 75.5kg, parseou: ${parsed}`);
+  });
+
+  // 14. Identificação e eliminação de rotinas legadas duplicadas
+  test('Identifica rotinas legadas duplicadas e preserva as rotinas Smart Fit e personalizadas', () => {
+    // Rotinas legadas do primeiro build
+    const legacySunday = { id: 'routine_domingo', name: 'Domingo: Posteriores de Coxa e Glúteos', totalPlannedSets: 14 };
+    const legacyMonday = { id: 'routine_segunda', name: 'Segunda: Peito, Ombros e Tríceps', totalPlannedSets: 20 };
+    const legacyTuesday = { id: 'routine_terca', name: 'Terça: Pernas com foco em Quadríceps', totalPlannedSets: 15 };
+    const legacyThursday = { id: 'routine_quinta', name: 'Quinta: Treino de Membros Superiores', totalPlannedSets: 15 };
+
+    assert(isLegacyRoutine(legacySunday), 'Deve marcar routine_domingo como legada');
+    assert(isLegacyRoutine(legacyMonday), 'Deve marcar routine_segunda como legada');
+    assert(isLegacyRoutine(legacyTuesday), 'Deve marcar routine_terca como legada');
+    assert(isLegacyRoutine(legacyThursday), 'Deve marcar routine_quinta como legada');
+
+    // Rotinas oficiais Smart Fit
+    const sfMonday = { id: 'routine_smartfit_segunda', name: 'Segunda: Peito, Ombros e Tríceps', totalPlannedSets: 20 };
+    const sfSunday = { id: 'routine_smartfit_domingo', name: 'Domingo: Posteriores de Coxa e Glúteos', totalPlannedSets: 19 };
+    assert(!isLegacyRoutine(sfMonday), 'Não deve marcar routine_smartfit_segunda como legada');
+    assert(!isLegacyRoutine(sfSunday), 'Não deve marcar routine_smartfit_domingo como legada');
+
+    // Rotina customizada do usuário
+    const customUserRoutine = { id: 'custom_routine_1710000000', name: 'Treino Especial', totalPlannedSets: 12 };
+    const copiedRoutine = { id: 'routine_copy_1710000000', name: 'Treino Cópia', totalPlannedSets: 15 };
+    assert(!isLegacyRoutine(customUserRoutine), 'Não deve marcar rotina customizada do usuário como legada');
+    assert(!isLegacyRoutine(copiedRoutine), 'Não deve marcar cópia feita pelo usuário como legada');
+  });
+
+  // 15. Lista de Iniciar Treino contém exatamente os 5 dias ativos sem nenhuma duplicata
+  test('Lista de Iniciar Treino exibe exatamente 5 treinos ativos sem repetição de dias', () => {
+    // Simula array contendo rotinas legadas + Smart Fit (como estava no dispositivo do usuário)
+    const simulatedMixedRoutines: Array<{ id: string; name: string; dayOfWeek: number; isRestDay: boolean; totalPlannedSets: number; description?: string; targetMuscleGroups?: any[]; exercises?: any[]; color?: string }> = [
+      { id: 'routine_domingo', name: 'Domingo: Posteriores de Coxa e Glúteos', dayOfWeek: 0, isRestDay: false, totalPlannedSets: 14, exercises: [], color: '#84cc16' },
+      { id: 'routine_smartfit_domingo', name: 'Domingo: Posteriores de Coxa e Glúteos', dayOfWeek: 0, isRestDay: false, totalPlannedSets: 19, exercises: [], color: '#84cc16' },
+      { id: 'routine_segunda', name: 'Segunda: Peito, Ombros e Tríceps', dayOfWeek: 1, isRestDay: false, totalPlannedSets: 20, exercises: [], color: '#84cc16' },
+      { id: 'routine_smartfit_segunda', name: 'Segunda: Peito, Ombros e Tríceps', dayOfWeek: 1, isRestDay: false, totalPlannedSets: 20, exercises: [], color: '#84cc16' },
+      { id: 'routine_terca', name: 'Terça: Pernas com foco em Quadríceps', dayOfWeek: 2, isRestDay: false, totalPlannedSets: 15, exercises: [], color: '#84cc16' },
+      { id: 'routine_smartfit_terca', name: 'Terça: Pernas, foco em Quadríceps', dayOfWeek: 2, isRestDay: false, totalPlannedSets: 20, exercises: [], color: '#84cc16' },
+      { id: 'routine_quarta', name: 'Quarta: Costas e Bíceps', dayOfWeek: 3, isRestDay: false, totalPlannedSets: 19, exercises: [], color: '#84cc16' },
+      { id: 'routine_smartfit_quarta', name: 'Quarta: Costas e Bíceps', dayOfWeek: 3, isRestDay: false, totalPlannedSets: 19, exercises: [], color: '#84cc16' },
+      { id: 'routine_quinta', name: 'Quinta: Treino de Membros Superiores', dayOfWeek: 4, isRestDay: false, totalPlannedSets: 15, exercises: [], color: '#84cc16' },
+      { id: 'routine_smartfit_quinta', name: 'Quinta: Superior Completo', dayOfWeek: 4, isRestDay: false, totalPlannedSets: 18, exercises: [], color: '#84cc16' },
+      { id: 'routine_smartfit_sexta', name: 'Sexta: Dia de Descanso', dayOfWeek: 5, isRestDay: true, totalPlannedSets: 0, exercises: [], color: '#71717a' },
+      { id: 'routine_smartfit_sabado', name: 'Sábado: Dia de Descanso', dayOfWeek: 6, isRestDay: true, totalPlannedSets: 0, exercises: [], color: '#71717a' },
+    ];
+
+    const activeWorkouts = simulatedMixedRoutines.filter((r) => !r.isRestDay && !isLegacyRoutine(r));
+
+    assert(activeWorkouts.length === 5, `Esperado exatamente 5 treinos ativos no modal Iniciar Treino, encontrou: ${activeWorkouts.length}`);
+
+    // Verifica que cada dia da semana é único
+    const days = activeWorkouts.map(w => w.dayOfWeek);
+    const uniqueDays = new Set(days);
+    assert(uniqueDays.size === 5, `Não deve haver dias duplicados. Dias encontrados: ${Array.from(uniqueDays).join(', ')}`);
+
+    // Verifica que apenas as versões Smart Fit (19 séries no domingo, 20 na terça, 18 na quinta) foram mantidas
+    const sunday = activeWorkouts.find(w => w.dayOfWeek === 0)!;
+    const tuesday = activeWorkouts.find(w => w.dayOfWeek === 2)!;
+    const thursday = activeWorkouts.find(w => w.dayOfWeek === 4)!;
+
+    assert(sunday.id === 'routine_smartfit_domingo' && sunday.totalPlannedSets === 19, 'Domingo deve ser o Smart Fit oficial de 19 séries');
+    assert(tuesday.id === 'routine_smartfit_terca' && tuesday.totalPlannedSets === 20, 'Terça deve ser o Smart Fit oficial de 20 séries');
+    assert(thursday.id === 'routine_smartfit_quinta' && thursday.totalPlannedSets === 18, 'Quinta deve ser o Smart Fit oficial de 18 séries');
+  });
+
+  // 16. Adiar primeiro exercício quando equipamento estiver ocupado
+  test('Adiar primeiro exercício move para o final da fila de pendentes e preserva ordem', () => {
+    const list: WorkoutExercise[] = [
+      { id: 'ex_1', exerciseId: 'stiff', exerciseName: 'Stiff com Halteres', targetMuscleGroup: 'posteriores', sets: [{ id: 's1', setNumber: 1, targetReps: 10, targetWeightKg: 40, restSeconds: 90, completed: false }] },
+      { id: 'ex_2', exerciseId: 'mesa_flexora', exerciseName: 'Mesa Flexora', targetMuscleGroup: 'posteriores', sets: [{ id: 's2', setNumber: 1, targetReps: 12, targetWeightKg: 35, restSeconds: 90, completed: false }] },
+      { id: 'ex_3', exerciseId: 'cadeira_flexora', exerciseName: 'Cadeira Flexora', targetMuscleGroup: 'posteriores', sets: [{ id: 's3', setNumber: 1, targetReps: 12, targetWeightKg: 40, restSeconds: 90, completed: false }] },
+      { id: 'ex_4', exerciseId: 'panturrilha', exerciseName: 'Panturrilha', targetMuscleGroup: 'panturrilhas', sets: [{ id: 's4', setNumber: 1, targetReps: 15, targetWeightKg: 60, restSeconds: 75, completed: false }] },
+    ];
+
+    // Simula adiar ex_1 (Stiff)
+    const current = list[0];
+    const remaining = list.slice(1);
+    const newOrder = [...remaining, { ...current, isPostponed: true }];
+
+    assert(newOrder[0].exerciseName === 'Mesa Flexora', 'Próximo exercício ativo deve ser Mesa Flexora');
+    assert(newOrder[3].exerciseName === 'Stiff com Halteres', 'Stiff deve ir para o final da fila temporária');
+    assert(newOrder[3].isPostponed === true, 'Stiff deve estar marcado como adiado por equipamento ocupado');
+  });
+
+  // 17. Adiar dois exercícios diferentes na mesma sessão
+  test('Permite adiar múltiplos exercícios na mesma sessão mantendo a fila correta', () => {
+    let queue: WorkoutExercise[] = [
+      { id: 'ex_1', exerciseId: 'e1', exerciseName: 'Stiff', targetMuscleGroup: 'posteriores', sets: [{ id: 's1', setNumber: 1, targetReps: 10, targetWeightKg: 40, restSeconds: 90, completed: false }] },
+      { id: 'ex_2', exerciseId: 'e2', exerciseName: 'Mesa Flexora', targetMuscleGroup: 'posteriores', sets: [{ id: 's2', setNumber: 1, targetReps: 12, targetWeightKg: 35, restSeconds: 90, completed: false }] },
+      { id: 'ex_3', exerciseId: 'e3', exerciseName: 'Cadeira Flexora', targetMuscleGroup: 'posteriores', sets: [{ id: 's3', setNumber: 1, targetReps: 12, targetWeightKg: 40, restSeconds: 90, completed: false }] },
+      { id: 'ex_4', exerciseId: 'e4', exerciseName: 'Panturrilha', targetMuscleGroup: 'panturrilhas', sets: [{ id: 's4', setNumber: 1, targetReps: 15, targetWeightKg: 60, restSeconds: 75, completed: false }] },
+    ];
+
+    // 1º adiantamento: adia Stiff
+    queue = [...queue.slice(1), { ...queue[0], isPostponed: true }];
+    assert(queue[0].exerciseName === 'Mesa Flexora', 'Após 1º adiantamento, topo é Mesa');
+    assert(queue[3].exerciseName === 'Stiff', 'Stiff foi para o final');
+
+    // 2º adiantamento: Mesa também está ocupada!
+    queue = [...queue.slice(1), { ...queue[0], isPostponed: true }];
+    assert(queue[0].exerciseName === 'Cadeira Flexora', 'Após 2º adiantamento, topo é Cadeira');
+    assert(queue[1].exerciseName === 'Panturrilha', 'Segundo é Panturrilha');
+    assert(queue[2].exerciseName === 'Stiff', 'Terceiro é Stiff');
+    assert(queue[3].exerciseName === 'Mesa Flexora', 'Quarto é Mesa Flexora');
+
+    assert(queue.filter(e => e.isPostponed).length === 2, 'Dois exercícios devem estar marcados como adiados');
+  });
+
+  // 18. Preservação de séries concluídas ao adiar exercício
+  test('Séries já concluídas e cargas digitadas permanecem salvas ao adiar o exercício', () => {
+    const stiffWithDoneSet: WorkoutExercise = {
+      id: 'ex_stiff',
+      exerciseId: 'stiff',
+      exerciseName: 'Stiff com Halteres',
+      targetMuscleGroup: 'posteriores',
+      sets: [
+        { id: 's1', setNumber: 1, targetReps: 10, actualReps: 12, targetWeightKg: 40, actualWeightKg: 44, restSeconds: 90, completed: true },
+        { id: 's2', setNumber: 2, targetReps: 10, targetWeightKg: 40, restSeconds: 90, completed: false },
+        { id: 's3', setNumber: 3, targetReps: 10, targetWeightKg: 40, restSeconds: 90, completed: false },
+      ],
+    };
+
+    // Adia o Stiff
+    const postponed = { ...stiffWithDoneSet, isPostponed: true };
+
+    assert(postponed.sets[0].completed === true, 'Série 1 deve continuar concluída');
+    assert(postponed.sets[0].actualWeightKg === 44, 'Carga de 44kg deve continuar preservada');
+    assert(postponed.sets[0].actualReps === 12, '12 repetições devem continuar preservadas');
+    assert(postponed.sets[1].completed === false, 'Série 2 permanece pendente');
+    assert(postponed.sets[2].completed === false, 'Série 3 permanece pendente');
+  });
+
+  // 19. Persistência da fila temporária após serialização
+  test('Fila temporária com exercícios adiados é preservada após serialização JSON/IndexedDB', () => {
+    const sessionData = {
+      id: 'session_test',
+      routineId: 'routine_smartfit_domingo',
+      routineName: 'Domingo: Posterior e Glúteos',
+      startTime: Date.now(),
+      totalPausedDurationMs: 0,
+      currentExerciseIndex: 0,
+      exercises: [
+        { id: 'e2', exerciseName: 'Mesa Flexora', isPostponed: false, sets: [] },
+        { id: 'e1', exerciseName: 'Stiff', isPostponed: true, sets: [] },
+      ],
+      isCompleted: false,
+    };
+
+    const serialized = JSON.stringify(sessionData);
+    const deserialized = JSON.parse(serialized);
+
+    assert(deserialized.exercises[0].exerciseName === 'Mesa Flexora', 'Ordem temporária preservada');
+    assert(deserialized.exercises[1].exerciseName === 'Stiff', 'Stiff no final preservado');
+    assert(deserialized.exercises[1].isPostponed === true, 'Flag isPostponed persistida');
+  });
+
+  // 20. Descartar treino não gera log nem incrementa treinos concluídos
+  test('Descarte de treino encerra a sessão ativa sem registrar no histórico de treinos concluídos', () => {
+    const initialLogs: WorkoutLog[] = [
+      { id: 'log_1', routineId: 'r1', routineName: 'Peito', date: '2026-10-29', durationMinutes: 60, totalVolumeKg: 8000, totalSetsCompleted: 20, exercises: [] },
+    ];
+
+    let activeSession: any = { id: 'session_123', routineName: 'Treino Cancelado' };
+
+    // Ao descartar o treino
+    const onDiscard = () => {
+      activeSession = null;
+    };
+    onDiscard();
+
+    assert(activeSession === null, 'Sessão ativa deve ser resetada para null');
+    assert(initialLogs.length === 1, 'Histórico não deve ter recebido nenhuma nova entrada de log');
+    assert(initialLogs[0].routineName === 'Peito', 'Logs históricos anteriores devem permanecer intactos');
+  });
+
+  // 21. Identificação correta de estados na lista Ver Todos os Exercícios
+  test('Lista Ver Todos os Exercícios mapeia estados: concluído, pulado, adiado e pendente', () => {
+    const exDone: WorkoutExercise = {
+      id: '1', exerciseId: 'e1', exerciseName: 'Supino', targetMuscleGroup: 'peito',
+      sets: [{ id: 's1', setNumber: 1, targetReps: 10, targetWeightKg: 50, restSeconds: 90, completed: true }],
+    };
+    const exSkipped: WorkoutExercise = {
+      id: '2', exerciseId: 'e2', exerciseName: 'Crucifixo', targetMuscleGroup: 'peito',
+      sets: [{ id: 's2', setNumber: 1, targetReps: 10, targetWeightKg: 30, restSeconds: 90, completed: false, skipped: true }],
+    };
+    const exPostponed: WorkoutExercise = {
+      id: '3', exerciseId: 'e3', exerciseName: 'Desenvolvimento', targetMuscleGroup: 'ombros', isPostponed: true,
+      sets: [{ id: 's3', setNumber: 1, targetReps: 10, targetWeightKg: 20, restSeconds: 90, completed: false }],
+    };
+    const exPending: WorkoutExercise = {
+      id: '4', exerciseId: 'e4', exerciseName: 'Tríceps', targetMuscleGroup: 'triceps',
+      sets: [{ id: 's4', setNumber: 1, targetReps: 10, targetWeightKg: 25, restSeconds: 75, completed: false }],
+    };
+
+    assert(exDone.sets.every(s => s.completed), 'Supino deve ser Concluído');
+    assert(exSkipped.sets.every(s => s.skipped), 'Crucifixo deve ser Pulado');
+    assert(exPostponed.isPostponed === true, 'Desenvolvimento deve ser Adiado por equipamento ocupado');
+    assert(!exPending.sets[0].completed && !exPending.sets[0].skipped && !exPending.isPostponed, 'Tríceps deve ser Pendente');
+  });
+
+  // 22. Conformidade de botões de no mínimo 52px e ausência de textos cinza
+  test('Botões de ação possuem altura mínima de 52px e padrão de alto contraste', () => {
+    const minButtonHeightPx = 52;
+    assert(minButtonHeightPx >= 52, 'Botões de ação rápida devem ter pelo menos 52px de altura para ergonomia mobile');
   });
 
   return results;

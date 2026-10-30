@@ -63,6 +63,7 @@ export interface WorkoutExercise {
   repsRange?: string;
   isUnilateral?: boolean;
   isMultiarticular?: boolean;
+  isPostponed?: boolean; // Exercício adiado temporariamente por equipamento ocupado
 }
 
 export interface WorkoutRoutine {

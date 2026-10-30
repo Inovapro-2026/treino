@@ -23,6 +23,8 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  ArrowRightLeft,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   ActiveWorkoutSession,
@@ -64,6 +66,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   const [restTimer, setRestTimer] = useState<ActiveRestTimer | undefined>(session.restTimer);
   const [isRestModalOpen, setIsRestModalOpen] = useState<boolean>(!!session.restTimer?.active);
 
+  // Drawers and Modals
   const [isExercisesDrawerOpen, setIsExercisesDrawerOpen] = useState(false);
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
   const [confirmFinishOpen, setConfirmFinishOpen] = useState(false);
@@ -73,10 +76,16 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   const [showNotes, setShowNotes] = useState(false);
   const [showExerciseGuidance, setShowExerciseGuidance] = useState(false);
 
-  const [workoutNotes, setWorkoutNotes] = useState<string>(session.notes || '');
+  // Toast / feedback message for occupied equipment action
+  const [feedbackBanner, setFeedbackBanner] = useState<{
+    type: 'success' | 'info';
+    message: string;
+  } | null>(null);
 
+  const [workoutNotes, setWorkoutNotes] = useState<string>(session.notes || '');
   const lastActionTimestamp = useRef<number>(0);
 
+  // Elapsed timer computation
   useEffect(() => {
     if (session.isStarted === false) {
       setElapsedSeconds(0);
@@ -97,6 +106,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     return () => clearInterval(timer);
   }, [session.startTime, session.pausedAt, session.totalPausedDurationMs, session.isStarted]);
 
+  // Sync session changes back to parent & storage
   const syncSession = (
     newExercises: WorkoutExercise[],
     newExIndex: number,
@@ -140,14 +150,12 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   const currentCompletedCount = currentExercise
     ? currentExercise.sets.filter((s) => s.completed && !s.skipped).length
     : 0;
-  const currentSkippedCount = currentExercise
-    ? currentExercise.sets.filter((s) => s.skipped).length
-    : 0;
   const currentRemainingPending = currentExercise
     ? currentExercise.sets.filter((s) => !s.completed && !s.skipped).length
     : 0;
   const isCurrentExerciseDone = currentRemainingPending === 0;
 
+  // Start workout timer explicitly
   const handleStartWorkoutTimer = () => {
     const now = Date.now();
     const updated: ActiveWorkoutSession = {
@@ -164,6 +172,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     onSaveSession(updated);
   };
 
+  // Set Completion Handler
   const handleCompleteSet = (setIndex: number) => {
     const now = Date.now();
     if (now - lastActionTimestamp.current < 250) return;
@@ -232,6 +241,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     syncSession(updatedExercises, currentExerciseIndex, restTimer);
   };
 
+  // Skip Set Handler
   const handleSkipSet = (setIndex: number) => {
     const now = Date.now();
     if (now - lastActionTimestamp.current < 250) return;
@@ -260,6 +270,78 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     syncSession(updatedExercises, currentExerciseIndex, restTimer);
   };
 
+  // FUNCIONALIDADE 1: MÁQUINA OCUPADA — PRÓXIMO EXERCÍCIO
+  const handlePostponeOccupiedMachine = () => {
+    const now = Date.now();
+    if (now - lastActionTimestamp.current < 400) return;
+    lastActionTimestamp.current = now;
+
+    const current = exercises[currentExerciseIndex];
+    if (!current) return;
+
+    // An exercise has pending sets if at least one set is neither completed nor skipped
+    const hasPendingSets = (ex: WorkoutExercise) =>
+      ex.sets.some((s) => !s.completed && !s.skipped);
+
+    // Find other pending exercises in the current queue
+    const otherPending = exercises.filter(
+      (ex, idx) => idx !== currentExerciseIndex && hasPendingSets(ex)
+    );
+
+    if (otherPending.length === 0) {
+      setFeedbackBanner({
+        type: 'info',
+        message: 'Não há outro exercício pendente na fila no momento.',
+      });
+      setTimeout(() => setFeedbackBanner(null), 3500);
+      return;
+    }
+
+    // Mark current exercise as postponed by busy equipment, preserving all completed sets
+    const postponedExercise: WorkoutExercise = {
+      ...current,
+      isPostponed: true,
+    };
+
+    // Remove current exercise from its position
+    const remaining = exercises.filter((_, idx) => idx !== currentExerciseIndex);
+
+    // Place temporarily at the end of the pending exercises queue
+    let lastPendingIdx = -1;
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      if (hasPendingSets(remaining[i])) {
+        lastPendingIdx = i;
+        break;
+      }
+    }
+
+    const newExercises = [...remaining];
+    if (lastPendingIdx >= 0) {
+      newExercises.splice(lastPendingIdx + 1, 0, postponedExercise);
+    } else {
+      newExercises.push(postponedExercise);
+    }
+
+    // Automatically navigate to the first pending exercise in new queue
+    const nextPendingIdx = newExercises.findIndex((ex) => hasPendingSets(ex));
+    const newActiveIndex = nextPendingIdx >= 0 ? nextPendingIdx : 0;
+
+    setExercises(newExercises);
+    setCurrentExerciseIndex(newActiveIndex);
+
+    // Save temporary reordered session to storage
+    syncSession(newExercises, newActiveIndex, restTimer);
+
+    if (settings.vibrationEnabled) triggerHaptic([60, 50, 60]);
+
+    setFeedbackBanner({
+      type: 'success',
+      message: `"${current.exerciseName}" foi adiado para o final da fila de exercícios pendentes.`,
+    });
+    setTimeout(() => setFeedbackBanner(null), 3500);
+  };
+
+  // Confirm Skipping Whole Exercise
   const handleConfirmSkipExercise = () => {
     setSkipExerciseConfirmOpen(false);
 
@@ -285,6 +367,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     }
   };
 
+  // Rest Timer Controls
   const handleOpenRestTimer = (seconds = 90) => {
     const now = Date.now();
     const newTimer: ActiveRestTimer = {
@@ -313,6 +396,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     syncSession(exercises, currentExerciseIndex, undefined);
   };
 
+  // Set Field Values
   const handleUpdateSetValue = (
     setIndex: number,
     field: 'targetWeightKg' | 'actualWeightKg' | 'targetReps' | 'actualReps',
@@ -390,6 +474,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     syncSession(updatedExercises, currentExerciseIndex, restTimer);
   };
 
+  // Exercise Navigation
   const handleNavigateExercise = (targetIndex: number) => {
     if (targetIndex < 0 || targetIndex >= exercises.length) return;
 
@@ -427,6 +512,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     setIncompleteSetsWarningOpen(false);
   };
 
+  // Pause / Resume Session
   const handleToggleWorkoutPause = () => {
     if (isWorkoutPaused) {
       const pausedDuration = Date.now() - (session.pausedAt || Date.now());
@@ -448,6 +534,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     }
   };
 
+  // Finish Workout
   const handleConfirmFinish = () => {
     setConfirmFinishOpen(false);
 
@@ -526,72 +613,122 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         colors: ['#a3e635', '#22c55e', '#ffffff'],
       });
     } catch {
-      // Ignored if confetti is blocked
+      // Ignored
     }
 
     onFinishWorkout(newLog);
   };
 
+  // Helper to get comprehensive status for an exercise in "Ver todos os exercícios"
+  const getExerciseStatusInfo = (ex: WorkoutExercise, index: number) => {
+    const allCompleted = ex.sets.length > 0 && ex.sets.every((s) => s.completed);
+    if (allCompleted) {
+      return {
+        key: 'concluido',
+        label: 'Concluído',
+        badgeClass: 'bg-lime-400 text-zinc-950 font-bold',
+      };
+    }
+
+    const allSkipped = ex.sets.length > 0 && ex.sets.every((s) => s.skipped);
+    if (allSkipped) {
+      return {
+        key: 'pulado',
+        label: 'Pulado',
+        badgeClass: 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40',
+      };
+    }
+
+    if (ex.isPostponed) {
+      return {
+        key: 'adiado',
+        label: 'Adiado por equipamento ocupado',
+        badgeClass: 'bg-amber-400/20 text-amber-300 font-bold border border-amber-400/40',
+      };
+    }
+
+    const someCompleted = ex.sets.some((s) => s.completed || s.skipped);
+    if (index === currentExerciseIndex || someCompleted) {
+      return {
+        key: 'em_andamento',
+        label: 'Em andamento',
+        badgeClass: 'bg-lime-400/20 text-lime-400 font-bold border border-lime-400/30',
+      };
+    }
+
+    return {
+      key: 'pendente',
+      label: 'Pendente',
+      badgeClass: 'bg-zinc-800 text-white font-semibold border border-zinc-700',
+    };
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950 text-white overflow-y-auto">
-      {/* Compact Top Bar */}
-      <header className="sticky top-0 z-40 bg-zinc-950/95 backdrop-blur-md border-b border-zinc-800/80 px-3 py-2.5">
+    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950 text-white overflow-y-auto overflow-x-hidden">
+      {/* Top Bar with Workout Name, Timer, and Discard Action */}
+      <header className="sticky top-0 z-40 bg-zinc-950/95 backdrop-blur-md border-b border-zinc-800 px-3 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+          {/* FUNCIONALIDADE 3: DESCARTAR TREINO BUTTON (Header placement) */}
           <button
             onClick={() => setConfirmDiscardOpen(true)}
-            className="flex items-center justify-center h-8 w-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition active:scale-95 shrink-0"
-            title="Sair ou descartar treino"
+            className="flex items-center gap-1.5 h-10 px-3 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-white text-xs font-bold transition active:scale-95 shrink-0"
+            title="Descartar treino"
           >
-            <X className="w-4 h-4" />
+            <Trash2 className="w-4 h-4 text-red-400" />
+            <span className="hidden sm:inline">Descartar treino</span>
+            <span className="sm:hidden">Descartar</span>
           </button>
 
+          {/* Session Title & Timer */}
           <div className="flex-1 min-w-0 text-center px-1">
-            <h1 className="text-xs md:text-sm font-bold text-white truncate tracking-tight">
+            <h1 className="text-sm md:text-base font-extrabold text-white truncate tracking-tight">
               {session.routineName || 'Treino em Andamento'}
             </h1>
-            <div className="flex items-center justify-center gap-2 mt-0.5 text-[11px] font-mono text-zinc-300">
+            <div className="flex items-center justify-center gap-2 mt-0.5 text-xs font-mono text-white">
               <span className="flex items-center gap-1 font-bold">
-                <Clock className="w-3 h-3 text-lime-400" />
+                <Clock className="w-3.5 h-3.5 text-lime-400" />
                 {formatSecondsToTime(elapsedSeconds)}
               </span>
-              <span className="text-zinc-600">•</span>
-              <span className="font-semibold text-lime-400">
+              <span className="text-white font-bold">•</span>
+              <span className="font-bold text-lime-400">
                 {completedSetsCount}/{totalSets} séries
               </span>
               {isWorkoutPaused && (
-                <span className="rounded bg-amber-500/20 px-1 py-0.2 text-[9px] font-bold text-amber-400 uppercase">
+                <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-400 uppercase">
                   Pausado
                 </span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Pause & Finish buttons */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handleToggleWorkoutPause}
-              className={`flex items-center justify-center h-8 w-8 rounded-xl border transition active:scale-95 ${
+              className={`flex items-center justify-center h-10 w-10 rounded-xl border transition active:scale-95 ${
                 isWorkoutPaused
                   ? 'bg-amber-400 text-zinc-950 border-amber-400 font-bold'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white'
+                  : 'bg-zinc-900 border-zinc-700 text-white hover:bg-zinc-800'
               }`}
               title={isWorkoutPaused ? 'Retomar treino' : 'Pausar treino'}
             >
-              {isWorkoutPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
+              {isWorkoutPaused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4" />}
             </button>
 
             <button
               onClick={() => setConfirmFinishOpen(true)}
-              className="flex items-center gap-1 h-8 px-2.5 rounded-xl bg-lime-400 text-zinc-950 font-extrabold text-xs hover:bg-lime-300 transition active:scale-95 shadow-sm shadow-lime-950/30"
+              className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-lime-400 text-zinc-950 font-extrabold text-xs hover:bg-lime-300 transition active:scale-95 shadow-md shadow-lime-950/40"
               title="Finalizar e salvar treino"
             >
-              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              <Check className="w-4 h-4 stroke-[3]" />
               <span className="hidden xs:inline">Concluir</span>
             </button>
           </div>
         </div>
 
-        <div className="max-w-2xl mx-auto mt-2">
-          <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-800">
+        {/* Overall Workout Progress Bar */}
+        <div className="max-w-2xl mx-auto mt-2.5">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
             <div
               className="h-full bg-lime-400 transition-all duration-300 ease-out"
               style={{ width: `${progressPercent}%` }}
@@ -600,74 +737,127 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         </div>
       </header>
 
+      {/* Postpone Feedback Banner */}
+      <AnimatePresence>
+        {feedbackBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="max-w-2xl w-full mx-auto px-3 pt-3"
+          >
+            <div
+              className={`rounded-xl border p-3 flex items-center justify-between gap-3 shadow-lg ${
+                feedbackBanner.type === 'success'
+                  ? 'border-lime-400/40 bg-zinc-900 text-white'
+                  : 'border-amber-400/40 bg-zinc-900 text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ArrowRightLeft
+                  className={`w-5 h-5 shrink-0 ${
+                    feedbackBanner.type === 'success' ? 'text-lime-400' : 'text-amber-400'
+                  }`}
+                />
+                <p className="text-xs font-bold text-white leading-snug">
+                  {feedbackBanner.message}
+                </p>
+              </div>
+              <button
+                onClick={() => setFeedbackBanner(null)}
+                className="p-1 rounded-lg text-white hover:bg-zinc-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Waiting to Start Banner */}
       {session.isStarted === false && (
         <div className="max-w-2xl w-full mx-auto px-3 pt-3">
-          <div className="rounded-xl border border-lime-400/40 bg-zinc-900 p-3 flex items-center justify-between gap-3 shadow-md">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-lime-400 text-zinc-950 font-bold">
-                <Play className="w-4 h-4 fill-current" />
+          <div className="rounded-2xl border border-lime-400/40 bg-zinc-900 p-4 flex items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime-400 text-zinc-950 font-bold">
+                <Play className="w-5 h-5 fill-current" />
               </div>
-              <p className="text-xs text-zinc-300">
-                O cronômetro inicia ao clicar em <strong>Iniciar</strong> ou concluir a 1ª série.
+              <p className="text-xs font-bold text-white">
+                O cronômetro inicia ao tocar em <strong>Iniciar</strong> ou concluir a 1ª série.
               </p>
             </div>
             <button
               onClick={handleStartWorkoutTimer}
-              className="shrink-0 rounded-lg bg-lime-400 px-3 py-1.5 text-xs font-black text-zinc-950 hover:bg-lime-300 transition"
+              className="min-h-[52px] h-[52px] px-5 shrink-0 rounded-xl bg-lime-400 text-sm font-black text-zinc-950 hover:bg-lime-300 transition flex items-center justify-center shadow-md shadow-lime-950/40"
             >
-              Iniciar
+              Iniciar Treino
             </button>
           </div>
         </div>
       )}
 
-      {/* Exercise Overview Banner */}
-      <section className="max-w-2xl w-full mx-auto px-3 pt-3">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2 flex items-center justify-between gap-2 shadow-sm">
-          <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-lime-400">
-              Exercício {currentExerciseIndex + 1} de {exercises.length}
-            </div>
-            <div className="text-xs font-bold text-white truncate">
-              {currentExerciseIndex + 1}. {currentExercise.exerciseName}
-            </div>
-            <div className="text-[11px] text-zinc-300">
-              {currentCompletedCount}/{currentExercise.sets.length} séries · {currentExercise.repsRange || '8–12'} reps
-            </div>
-          </div>
+      {/* ACTION CONTROLS: "Máquina Ocupada" & "Ver todos os exercícios" */}
+      <section className="max-w-2xl w-full mx-auto px-3 pt-3 space-y-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* FUNCIONALIDADE 1: MÁQUINA OCUPADA — PRÓXIMO EXERCÍCIO */}
+          <button
+            onClick={handlePostponeOccupiedMachine}
+            className="w-full min-h-[52px] h-[52px] px-4 rounded-xl border-2 border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/20 text-white font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2.5 shadow-md shadow-black/40"
+            title="Adiar este exercício para o final da fila de pendentes"
+          >
+            <ArrowRightLeft className="w-5 h-5 text-lime-400 shrink-0" />
+            <span className="truncate">Máquina ocupada — Próximo exercício</span>
+          </button>
 
+          {/* FUNCIONALIDADE 2: VER TODOS OS EXERCÍCIOS */}
           <button
             onClick={() => setIsExercisesDrawerOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/90 px-2.5 py-1.5 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-zinc-700 transition active:scale-95 shrink-0"
-            title="Abrir lista completa de exercícios"
+            className="w-full min-h-[52px] h-[52px] px-4 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-750 text-white font-bold text-sm transition active:scale-[0.98] flex items-center justify-center gap-2.5 shadow-md shadow-black/40"
+            title="Ver a lista de todos os exercícios da sessão"
           >
-            <List className="w-3.5 h-3.5 text-lime-400" />
-            <span>Ver exercícios</span>
+            <List className="w-5 h-5 text-lime-400 shrink-0" />
+            <span className="truncate">Ver todos os exercícios</span>
           </button>
         </div>
       </section>
 
-      {/* MAIN WORKOUT AREA - Cards for each set */}
-      <main className="max-w-2xl w-full mx-auto p-3 flex-1 space-y-4 pb-28">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-xl space-y-4">
+      {/* MAIN WORKOUT AREA - Focused Current Exercise Card */}
+      <main className="max-w-2xl w-full mx-auto p-3 flex-1 space-y-4 pb-36">
+        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl space-y-5">
           {/* Exercise Header */}
-          <div className="flex items-start justify-between gap-2 pb-3 border-b border-zinc-800/80">
+          <div className="flex items-start justify-between gap-3 pb-4 border-b border-zinc-800">
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-lime-400">
-                EXERCÍCIO {currentExerciseIndex + 1} DE {exercises.length}
-              </span>
-              <h2 className="text-lg md:text-xl font-black text-white tracking-tight mt-0.5 truncate">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-lime-400">
+                  EXERCÍCIO {currentExerciseIndex + 1} DE {exercises.length}
+                </span>
+                {currentExercise.isPostponed && (
+                  <span className="rounded bg-amber-400/20 border border-amber-400/40 px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase">
+                    Adiado anteriormente
+                  </span>
+                )}
+              </div>
+
+              <h2 className="text-xl md:text-2xl font-black text-white tracking-tight mt-1 truncate">
                 {currentExercise.exerciseName}
               </h2>
-              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-zinc-300">
+
+              <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-white font-semibold">
                 <span>{currentExercise.sets.length} séries planejadas</span>
                 <span>•</span>
-                <span className="font-semibold text-white">
+                <span className="text-lime-400 font-bold">
                   {currentExercise.repsRange || '8–12'} repetições
                 </span>
+                {currentExercise.targetMuscleGroup && (
+                  <>
+                    <span>•</span>
+                    <span className="capitalize">
+                      {MUSCLE_GROUP_LABELS[currentExercise.targetMuscleGroup] || currentExercise.targetMuscleGroup}
+                    </span>
+                  </>
+                )}
                 {currentExercise.isUnilateral && (
-                  <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 uppercase">
+                  <span className="rounded bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase">
                     Unilateral
                   </span>
                 )}
@@ -676,44 +866,44 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
             <button
               onClick={() => handleOpenRestTimer(currentExercise.sets[0]?.restSeconds || 90)}
-              className="flex items-center gap-1.5 rounded-xl border border-lime-400/30 bg-lime-400/10 px-3 py-1.5 text-xs font-bold text-lime-400 hover:bg-lime-400/20 transition active:scale-95 shrink-0 shadow-sm"
+              className="min-h-[52px] h-[52px] px-3.5 flex items-center gap-2 rounded-xl border border-lime-400/40 bg-lime-400/10 text-xs font-bold text-lime-400 hover:bg-lime-400/20 transition active:scale-95 shrink-0 shadow-sm"
               title="Abrir cronômetro de descanso independente"
             >
-              <Clock className="w-3.5 h-3.5" />
+              <Clock className="w-4 h-4 text-lime-400" />
               <span>Descanso 1:30</span>
             </button>
           </div>
 
           {/* Previous Session Reference */}
           {previousExercisePerformance && previousExercisePerformance.length > 0 && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-xs flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-zinc-300 truncate">
-                <Award className="w-3.5 h-3.5 text-lime-400 shrink-0" />
-                <span className="text-zinc-400">Última sessão:</span>
-                <span className="font-semibold text-white truncate font-mono">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-white truncate">
+                <Award className="w-4 h-4 text-lime-400 shrink-0" />
+                <span className="font-bold text-white">Última sessão:</span>
+                <span className="font-bold text-lime-400 truncate font-mono">
                   {previousExercisePerformance.map((s) => `${s.weightKg}kg × ${s.reps}`).join(' | ')}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Exercise Guidance */}
+          {/* Exercise Guidance / Technical Notes */}
           {currentExercise.notes && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-3.5">
               <button
                 onClick={() => setShowExerciseGuidance((prev) => !prev)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 hover:text-white transition w-full justify-start"
+                className="flex items-center gap-2 text-xs font-bold text-white hover:text-lime-400 transition w-full justify-start"
               >
-                <Info className="w-3.5 h-3.5 text-lime-400" />
+                <Info className="w-4 h-4 text-lime-400" />
                 <span>Orientações técnicas</span>
-                {showExerciseGuidance ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {showExerciseGuidance ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
               {showExerciseGuidance && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   transition={{ duration: 0.2 }}
-                  className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/80 p-3 text-xs text-zinc-300"
+                  className="mt-2.5 rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-xs text-white leading-relaxed"
                 >
                   {currentExercise.notes}
                 </motion.div>
@@ -721,8 +911,8 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
             </div>
           )}
 
-          {/* SET CARDS - Individual cards for each set */}
-          <div className="space-y-3">
+          {/* SET CARDS - Individual cards for each set with large controls */}
+          <div className="space-y-3.5">
             {currentExercise.sets.map((set, setIndex) => {
               const currentWeight =
                 set.actualWeightKg !== undefined ? set.actualWeightKg : set.targetWeightKg;
@@ -738,37 +928,43 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: setIndex * 0.05 }}
-                  className={`rounded-2xl border p-4 space-y-3 transition-all duration-200 ${
+                  className={`rounded-2xl border p-4 space-y-3.5 transition-all duration-200 ${
                     isCompleted
-                      ? 'border-lime-400/30 bg-lime-400/5'
+                      ? 'border-lime-400/40 bg-lime-400/10'
                       : isSkipped
-                      ? 'border-zinc-800 bg-zinc-950/50 opacity-60'
-                      : 'border-zinc-800 bg-zinc-950/50'
+                      ? 'border-zinc-800 bg-zinc-950/70 opacity-60'
+                      : 'border-zinc-800 bg-zinc-950'
                   }`}
                 >
                   {/* Set Header */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 text-lime-400 font-bold text-xs">
-                        {set.setNumber}
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-800 text-lime-400 font-extrabold text-sm">
+                        #{set.setNumber}
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Série {set.setNumber}</div>
-                        <div className="text-[10px] text-zinc-400">
-                          {isCompleted ? 'Concluída' : isSkipped ? 'Pulada' : 'Pendente'}
+                        <div className="text-sm font-extrabold text-white tracking-wide">
+                          Série {set.setNumber}
+                        </div>
+                        <div className="text-xs font-bold text-white">
+                          {isCompleted ? (
+                            <span className="text-lime-400">Concluída</span>
+                          ) : isSkipped ? (
+                            <span className="text-amber-400">Pulada</span>
+                          ) : (
+                            <span className="text-white">Pendente</span>
+                          )}
                         </div>
                       </div>
                     </div>
-                    {isCompleted && (
-                      <CheckCircle2 className="w-5 h-5 text-lime-400" />
-                    )}
+                    {isCompleted && <CheckCircle2 className="w-6 h-6 text-lime-400 stroke-[2.5]" />}
                   </div>
 
-                  {/* Weight & Reps Fields - Large touch targets */}
+                  {/* Weight & Reps Fields with minimum 52px height */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Weight Field */}
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                      <label className="block text-xs font-bold text-white uppercase tracking-wider">
                         Carga (kg)
                       </label>
                       <input
@@ -778,7 +974,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                         value={currentWeight ?? ''}
                         onFocus={(e) => e.target.select()}
                         onChange={(e) => handleUpdateSetValue(setIndex, 'actualWeightKg', e.target.value)}
-                        className="w-full h-12 text-center text-xl font-bold text-white bg-zinc-900 border border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder-zinc-500"
+                        className="w-full min-h-[52px] h-[52px] text-center text-2xl font-black text-white bg-zinc-900 border-2 border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder:text-zinc-500 transition"
                         placeholder="0"
                         inputMode="decimal"
                       />
@@ -786,33 +982,37 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
                     {/* Reps Field */}
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                      <label className="block text-xs font-bold text-white uppercase tracking-wider">
                         Repetições
                       </label>
                       {currentExercise.isUnilateral ? (
                         <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1.5">
-                            <label className="block text-[10px] font-semibold text-zinc-300 uppercase tracking-wider">Perna E</label>
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-bold text-white uppercase tracking-wider">
+                              Perna E
+                            </label>
                             <input
                               type="number"
                               min="1"
                               value={set.repsLeft !== undefined ? set.repsLeft : currentReps ?? ''}
                               onFocus={(e) => e.target.select()}
                               onChange={(e) => handleUpdateUnilateralReps(setIndex, 'repsLeft', e.target.value)}
-                              className="w-full h-12 text-center text-xl font-bold text-white bg-zinc-900 border border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder-zinc-500"
+                              className="w-full min-h-[52px] h-[52px] text-center text-xl font-black text-white bg-zinc-900 border-2 border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder:text-zinc-500 transition"
                               placeholder={String(set.targetReps || '10')}
                               inputMode="numeric"
                             />
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="block text-[10px] font-semibold text-zinc-300 uppercase tracking-wider">Perna D</label>
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-bold text-white uppercase tracking-wider">
+                              Perna D
+                            </label>
                             <input
                               type="number"
                               min="1"
                               value={set.repsRight !== undefined ? set.repsRight : currentReps ?? ''}
                               onFocus={(e) => e.target.select()}
                               onChange={(e) => handleUpdateUnilateralReps(setIndex, 'repsRight', e.target.value)}
-                              className="w-full h-12 text-center text-xl font-bold text-white bg-zinc-900 border border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder-zinc-500"
+                              className="w-full min-h-[52px] h-[52px] text-center text-xl font-black text-white bg-zinc-900 border-2 border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder:text-zinc-500 transition"
                               placeholder={String(set.targetReps || '10')}
                               inputMode="numeric"
                             />
@@ -825,7 +1025,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                           value={currentReps ?? ''}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdateSetValue(setIndex, 'actualReps', e.target.value)}
-                          className="w-full h-12 text-center text-xl font-bold text-white bg-zinc-900 border border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder-zinc-500"
+                          className="w-full min-h-[52px] h-[52px] text-center text-2xl font-black text-white bg-zinc-900 border-2 border-zinc-700 rounded-xl focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none placeholder:text-zinc-500 transition"
                           placeholder={String(set.targetReps || '10')}
                           inputMode="numeric"
                         />
@@ -833,41 +1033,32 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-2 pt-1">
+                  {/* Action Buttons: Concluir & Pular (min 52px height) */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
                     <button
                       onClick={() => handleCompleteSet(setIndex)}
                       disabled={isCompleted}
-                      className={`flex-1 h-11 rounded-xl font-bold text-xs transition-all duration-200 active:scale-[0.98] ${
+                      className={`min-h-[52px] h-[52px] rounded-xl font-extrabold text-sm transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 ${
                         isCompleted
-                          ? 'bg-lime-400 text-zinc-950 shadow-lg shadow-lime-950/30'
-                          : 'bg-zinc-800 border border-zinc-700 text-white hover:bg-zinc-700 hover:border-lime-400/50'
+                          ? 'bg-lime-400 text-zinc-950 shadow-lg shadow-lime-950/40'
+                          : 'bg-zinc-800 border border-zinc-700 text-white hover:bg-zinc-750 hover:border-lime-400/50'
                       }`}
                       title={isCompleted ? 'Série já concluída' : 'Concluir série'}
                     >
-                      {isCompleted ? (
-                        <>
-                          <Check className="w-4 h-4 mr-1 stroke-[3]" />
-                          Concluída
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-4 h-4 mr-1" />
-                          Concluir
-                        </>
-                      )}
+                      <Check className="w-5 h-5 stroke-[3]" />
+                      <span>{isCompleted ? 'Concluída' : 'Concluir'}</span>
                     </button>
 
                     <button
                       onClick={() => handleSkipSet(setIndex)}
-                      className={`flex-1 h-11 rounded-xl font-bold text-xs border transition-all duration-200 active:scale-[0.98] ${
+                      className={`min-h-[52px] h-[52px] rounded-xl font-bold text-sm border transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 ${
                         isSkipped
-                          ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
-                          : 'bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white'
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                          : 'bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-750'
                       }`}
                       title={isSkipped ? 'Desfazer pulo' : 'Pular série'}
                     >
-                      {isSkipped ? 'Pulada' : 'Pular'}
+                      <span>{isSkipped ? 'Desfazer pulo' : 'Pular série'}</span>
                     </button>
                   </div>
                 </motion.div>
@@ -880,39 +1071,40 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border border-lime-400/30 bg-lime-400/5 p-3 flex items-center justify-between"
+              className="rounded-2xl border border-lime-400/40 bg-lime-400/10 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg"
             >
-              <div className="flex items-center gap-2 text-lime-400 font-semibold text-sm">
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Todas as séries concluídas!</span>
+              <div className="flex items-center gap-2.5 text-lime-400 font-bold text-sm">
+                <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+                <span>Todas as séries deste exercício concluídas!</span>
               </div>
               {currentExerciseIndex < exercises.length - 1 && (
                 <button
                   onClick={() => handleNavigateExercise(currentExerciseIndex + 1)}
-                  className="rounded-lg bg-lime-400 px-3 py-1.5 text-xs font-black text-zinc-950 hover:bg-lime-300 transition shrink-0"
+                  className="min-h-[52px] h-[52px] px-6 rounded-xl bg-lime-400 text-sm font-black text-zinc-950 hover:bg-lime-300 transition shrink-0 flex items-center justify-center gap-2 shadow-md shadow-lime-950/40"
                 >
-                  Próximo Exercício
+                  <span>Próximo Exercício</span>
+                  <ChevronRight className="w-4 h-4 stroke-[3]" />
                 </button>
               )}
             </motion.div>
           )}
 
           {/* Exercise Bottom Options */}
-          <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
+            <div className="flex items-center gap-3">
               <button
                 onClick={handleAddSet}
-                className="flex items-center gap-1 text-xs font-semibold text-lime-400 hover:text-lime-300 transition"
+                className="flex items-center gap-1.5 text-xs font-bold text-lime-400 hover:text-lime-300 transition"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-4 h-4" />
                 <span>Adicionar série</span>
               </button>
               {currentExercise.sets.length > 1 && (
                 <button
                   onClick={() => handleRemoveSet(currentExercise.sets.length - 1)}
-                  className="flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-red-400 transition"
+                  className="flex items-center gap-1.5 text-xs font-bold text-red-400 hover:text-red-300 transition"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   <span>Remover última</span>
                 </button>
               )}
@@ -920,23 +1112,23 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
             <button
               onClick={() => setSkipExerciseConfirmOpen(true)}
-              className="flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-amber-400 transition"
+              className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300 transition"
               title="Pular todas as séries pendentes"
             >
-              <FastForward className="w-3.5 h-3.5" />
+              <FastForward className="w-4 h-4" />
               <span>Pular exercício</span>
             </button>
           </div>
         </div>
 
         {/* Session Notes */}
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/60 p-3">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4 shadow-lg">
           <button
             onClick={() => setShowNotes((prev) => !prev)}
-            className="w-full flex items-center justify-between text-xs font-semibold text-zinc-300 hover:text-white transition"
+            className="w-full flex items-center justify-between text-xs font-bold text-white hover:text-lime-400 transition"
           >
             <span>Observações da sessão</span>
-            {showNotes ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {showNotes ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showNotes && (
             <motion.textarea
@@ -949,19 +1141,19 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
               }}
               placeholder="Anotações sobre cargas, recuperação ou esforço..."
               rows={2}
-              className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 p-2.5 text-xs text-white placeholder-zinc-500 focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none"
+              className="mt-3 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-xs font-semibold text-white placeholder:text-zinc-500 focus:border-lime-400 focus:ring-2 focus:ring-lime-400/20 outline-none"
             />
           )}
         </div>
       </main>
 
-      {/* Sticky Bottom Navigation */}
-      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 p-2.5 safe-area-bottom">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+      {/* Sticky Bottom Navigation - Large 52px touch buttons */}
+      <footer className="fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 p-3 safe-area-bottom">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2.5">
           <button
             onClick={() => handleNavigateExercise(currentExerciseIndex - 1)}
             disabled={currentExerciseIndex === 0}
-            className="flex items-center gap-1 h-10 px-3 rounded-xl border border-zinc-800 bg-zinc-900 text-xs font-semibold text-zinc-300 hover:text-white disabled:opacity-30 disabled:hover:bg-zinc-900 transition active:scale-95 shrink-0"
+            className="min-h-[52px] h-[52px] px-4 rounded-xl border border-zinc-700 bg-zinc-850 text-xs sm:text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-30 disabled:hover:bg-zinc-850 transition active:scale-95 shrink-0 flex items-center justify-center gap-1.5"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>Anterior</span>
@@ -969,7 +1161,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
           <button
             onClick={() => handleOpenRestTimer(90)}
-            className="flex-1 flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl border border-lime-400/40 bg-lime-400/10 text-xs font-black text-lime-400 hover:bg-lime-400/20 transition active:scale-95 shadow-sm"
+            className="flex-1 min-h-[52px] h-[52px] px-3 rounded-xl border border-lime-400/40 bg-lime-400/10 text-xs sm:text-sm font-extrabold text-lime-400 hover:bg-lime-400/20 transition active:scale-95 flex items-center justify-center gap-2 shadow-sm"
             title="Abrir descanso de 1 minuto e 30 segundos"
           >
             <Clock className="w-4 h-4 text-lime-400" />
@@ -979,7 +1171,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
           {currentExerciseIndex < exercises.length - 1 ? (
             <button
               onClick={() => handleNavigateExercise(currentExerciseIndex + 1)}
-              className="flex items-center gap-1 h-10 px-3 rounded-xl border border-zinc-700 bg-zinc-800 text-xs font-bold text-white hover:bg-zinc-700 transition active:scale-95 shrink-0"
+              className="min-h-[52px] h-[52px] px-4 rounded-xl border border-zinc-600 bg-zinc-800 text-xs sm:text-sm font-bold text-white hover:bg-zinc-700 transition active:scale-95 shrink-0 flex items-center justify-center gap-1.5"
             >
               <span>Próximo</span>
               <ChevronRight className="w-4 h-4" />
@@ -987,7 +1179,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
           ) : (
             <button
               onClick={() => setConfirmFinishOpen(true)}
-              className="flex items-center gap-1 h-10 px-3.5 rounded-xl bg-lime-400 text-xs font-black text-zinc-950 hover:bg-lime-300 transition active:scale-95 shadow-md shadow-lime-950/40 shrink-0"
+              className="min-h-[52px] h-[52px] px-5 rounded-xl bg-lime-400 text-xs sm:text-sm font-black text-zinc-950 hover:bg-lime-300 transition active:scale-95 shadow-lg shadow-lime-950/40 shrink-0 flex items-center justify-center gap-2"
             >
               <Check className="w-4 h-4 stroke-[3]" />
               <span>Finalizar</span>
@@ -1013,106 +1205,127 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         />
       )}
 
-      {/* Exercises Drawer */}
-      {isExercisesDrawerOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xs p-0 sm:p-4"
-          onClick={() => setIsExercisesDrawerOpen(false)}
-        >
+      {/* FUNCIONALIDADE 2: MODAL "VER TODOS OS EXERCÍCIOS" */}
+      <AnimatePresence>
+        {isExercisesDrawerOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl text-white max-h-[80vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xs p-0 sm:p-4"
+            onClick={() => setIsExercisesDrawerOpen(false)}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-              <div className="flex items-center gap-2">
-                <List className="w-4 h-4 text-lime-400" />
-                <h3 className="font-extrabold text-white text-sm">Exercícios da Sessão</h3>
+            <motion.div
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="w-full max-w-lg rounded-t-3xl sm:rounded-3xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl text-white max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-lime-400/20 text-lime-400 font-bold">
+                    <List className="w-5 h-5 text-lime-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-white text-base">Exercícios da Sessão</h3>
+                    <p className="text-xs font-semibold text-white">
+                      {completedSetsCount}/{totalSets} séries concluídas
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsExercisesDrawerOpen(false)}
+                  className="p-2 rounded-xl text-white hover:bg-zinc-800 transition"
+                  title="Fechar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                onClick={() => setIsExercisesDrawerOpen(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto py-3 space-y-2 pr-1">
-              {exercises.map((ex, index) => {
-                const isCurrent = index === currentExerciseIndex;
-                const completedCount = ex.sets.filter((s) => s.completed && !s.skipped).length;
-                const isAllDone = completedCount === ex.sets.length;
+              {/* Scrollable Exercises List */}
+              <div className="flex-1 overflow-y-auto py-3 space-y-2.5 pr-1">
+                {exercises.map((ex, index) => {
+                  const isCurrent = index === currentExerciseIndex;
+                  const completedCount = ex.sets.filter((s) => s.completed && !s.skipped).length;
+                  const statusInfo = getExerciseStatusInfo(ex, index);
 
-                return (
-                  <button
-                    key={ex.id}
-                    onClick={() => {
-                      setCurrentExerciseIndex(index);
-                      setIsExercisesDrawerOpen(false);
-                      syncSession(exercises, index, restTimer);
-                    }}
-                    className={`w-full flex items-center justify-between rounded-xl p-3 text-left transition border ${
-                      isCurrent
-                        ? 'border-lime-400 bg-lime-400/10 text-white font-bold'
-                        : isAllDone
-                        ? 'border-zinc-800/80 bg-zinc-950/60 text-zinc-300'
-                        : 'border-zinc-800 bg-zinc-950/30 text-zinc-300 hover:border-zinc-700'
-                    }`}
-                  >
-                    <div className="min-w-0 pr-2">
-                      <div className="text-xs font-bold text-white truncate">
-                        {index + 1}. {ex.exerciseName}
+                  return (
+                    <button
+                      key={ex.id || `ex_${index}`}
+                      onClick={() => {
+                        setCurrentExerciseIndex(index);
+                        setIsExercisesDrawerOpen(false);
+                        syncSession(exercises, index, restTimer);
+                      }}
+                      className={`w-full flex items-center justify-between rounded-2xl p-4 text-left transition-all duration-150 border active:scale-[0.99] ${
+                        isCurrent
+                          ? 'border-2 border-lime-400 bg-lime-400/15 text-white shadow-lg shadow-lime-950/40'
+                          : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700 text-white'
+                      }`}
+                    >
+                      <div className="min-w-0 pr-3 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-lime-400">
+                            #{index + 1}
+                          </span>
+                          <h4 className="text-sm font-extrabold text-white truncate">
+                            {ex.exerciseName}
+                          </h4>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-white font-medium">
+                          {ex.targetMuscleGroup && (
+                            <span className="capitalize">
+                              {MUSCLE_GROUP_LABELS[ex.targetMuscleGroup] || ex.targetMuscleGroup}
+                            </span>
+                          )}
+                          <span>•</span>
+                          <span>{ex.sets.length} séries planejadas</span>
+                          <span>•</span>
+                          <span className="text-lime-400 font-bold">{ex.repsRange || '8–12 reps'}</span>
+                        </div>
                       </div>
-                      <div className="text-[10px] text-zinc-400">
-                        {completedCount}/{ex.sets.length} séries
+
+                      <div className="shrink-0 flex flex-col items-end gap-1.5">
+                        <span
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${statusInfo.badgeClass}`}
+                        >
+                          {statusInfo.label}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-white">
+                          {completedCount}/{ex.sets.length} séries
+                        </span>
                       </div>
-                    </div>
+                    </button>
+                  );
+                })}
+              </div>
 
-                    <div className="shrink-0 flex items-center gap-2">
-                      {isAllDone ? (
-                        <span className="flex items-center gap-1 rounded bg-lime-400/20 px-2 py-0.5 text-[10px] font-bold text-lime-400">
-                          <Check className="w-3 h-3 stroke-[3]" />
-                          Feito
-                        </span>
-                      ) : isCurrent ? (
-                        <span className="rounded bg-lime-400 px-2 py-0.5 text-[10px] font-black text-zinc-950">
-                          Atual
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-mono font-semibold text-zinc-400">
-                          {completedCount}/{ex.sets.length}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="pt-2 border-t border-zinc-800">
-              <button
-                onClick={() => setIsExercisesDrawerOpen(false)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-850 py-2 text-xs font-semibold text-zinc-300 hover:text-white transition"
-              >
-                Fechar
-              </button>
-            </div>
+              {/* Drawer Footer with large "Voltar ao treino" button */}
+              <div className="pt-3 border-t border-zinc-800">
+                <button
+                  onClick={() => setIsExercisesDrawerOpen(false)}
+                  className="w-full min-h-[52px] h-[52px] rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-black text-sm transition active:scale-[0.98] flex items-center justify-center gap-2 shadow-md shadow-lime-950/40"
+                >
+                  <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+                  <span>Voltar ao treino</span>
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
+        )}
+      </AnimatePresence>
 
-      {/* Confirmation Modals */}
+      {/* FUNCIONALIDADE 3: CONFIRMAÇÃO DE DESCARTAR TREINO */}
       <ConfirmationModal
         isOpen={confirmDiscardOpen}
-        title="Sair do Treino em Andamento?"
-        description="Se você sair agora sem salvar, o treino em andamento será descartado e não ficará registrado no seu histórico."
-        confirmLabel="Sim, Descartar"
-        cancelLabel="Continuar Treinando"
+        title="Descartar este treino?"
+        description="O treino em andamento será descartado. Deseja continuar?"
+        confirmLabel="Descartar treino"
+        cancelLabel="Continuar treinando"
         isDestructive={true}
         onConfirm={() => {
           setConfirmDiscardOpen(false);
@@ -1121,6 +1334,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         onCancel={() => setConfirmDiscardOpen(false)}
       />
 
+      {/* Confirmation to finish workout */}
       <ConfirmationModal
         isOpen={confirmFinishOpen}
         title="Finalizar e Salvar Treino?"
@@ -1132,6 +1346,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         onCancel={() => setConfirmFinishOpen(false)}
       />
 
+      {/* Confirmation to advance with unfinished sets */}
       <ConfirmationModal
         isOpen={incompleteSetsWarningOpen}
         title="Avançar com Séries Pendentes?"
@@ -1146,6 +1361,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         }}
       />
 
+      {/* Confirmation to skip whole exercise */}
       <ConfirmationModal
         isOpen={skipExerciseConfirmOpen}
         title="Pular Exercício Inteiro?"

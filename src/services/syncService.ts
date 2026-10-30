@@ -15,6 +15,7 @@ import {
   getActiveSession,
   saveActiveSession,
   onStorageMutation,
+  isLegacyRoutine,
 } from '../db/storage';
 import {
   WorkoutRoutine,
@@ -150,6 +151,9 @@ export async function processSyncQueue(): Promise<void> {
     try {
       if (item.type === 'routine') {
         const r = item.payload as WorkoutRoutine;
+        if (isLegacyRoutine(r)) {
+          continue; // Skip legacy routines
+        }
         await sql`
           INSERT INTO routines (id, user_id, name, description, day_of_week, is_rest_day, color, plan_name, estimated_minutes, total_planned_sets, exercises, target_muscle_groups, updated_at)
           VALUES (${r.id}, ${user.id}, ${r.name}, ${r.description || ''}, ${r.dayOfWeek}, ${r.isRestDay}, ${r.color}, ${r.planName || 'Treino de Hipertrofia'}, ${r.estimatedMinutes || ''}, ${r.totalPlannedSets || 0}, ${JSON.stringify(r.exercises || [])}, ${JSON.stringify(r.targetMuscleGroups || [])}, NOW())
@@ -286,10 +290,38 @@ export async function syncAllWithCloud(): Promise<boolean> {
     `;
 
     if (remoteRoutines && remoteRoutines.length > 0) {
-      const localRoutines = await getRoutines();
+      // Clean up legacy routines from remote database if present
+      const legacyRemote = remoteRoutines.filter((raw: any) =>
+        isLegacyRoutine({
+          id: raw.id,
+          name: raw.name,
+          totalPlannedSets: raw.total_planned_sets,
+          estimatedMinutes: raw.estimated_minutes,
+        })
+      );
+
+      for (const leg of legacyRemote) {
+        try {
+          await sql`DELETE FROM routines WHERE id = ${leg.id} AND user_id = ${user.id}`;
+        } catch (e) {
+          console.warn('Failed to delete legacy routine from remote', leg.id, e);
+        }
+      }
+
+      const validRemote = remoteRoutines.filter(
+        (raw: any) =>
+          !isLegacyRoutine({
+            id: raw.id,
+            name: raw.name,
+            totalPlannedSets: raw.total_planned_sets,
+            estimatedMinutes: raw.estimated_minutes,
+          })
+      );
+
+      const localRoutines = (await getRoutines()).filter((r) => !isLegacyRoutine(r));
       const localMap = new Map(localRoutines.map((r) => [r.id, r]));
 
-      for (const raw of remoteRoutines) {
+      for (const raw of validRemote) {
         const formatted: WorkoutRoutine = {
           id: raw.id,
           name: raw.name,
@@ -305,10 +337,10 @@ export async function syncAllWithCloud(): Promise<boolean> {
         };
         localMap.set(formatted.id, formatted);
       }
-      await saveRoutines(Array.from(localMap.values()));
+      await saveRoutines(Array.from(localMap.values()).filter((r) => !isLegacyRoutine(r)));
     } else {
-      // If remote has no routines, push existing local routines to cloud
-      const localRoutines = await getRoutines();
+      // If remote has no routines, push existing local routines to cloud (skipping legacy)
+      const localRoutines = (await getRoutines()).filter((r) => !isLegacyRoutine(r));
       for (const r of localRoutines) {
         await sql`
           INSERT INTO routines (id, user_id, name, description, day_of_week, is_rest_day, color, plan_name, estimated_minutes, total_planned_sets, exercises, target_muscle_groups, updated_at)

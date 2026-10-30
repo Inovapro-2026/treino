@@ -23,6 +23,7 @@ import { RoutineEditModal } from './RoutineEditModal';
 import { ConfirmationModal } from '../common/ConfirmationModal';
 import { DAY_NAMES, MUSCLE_GROUP_LABELS } from '../../utils/formatters';
 import { PROGRESSION_GUIDELINES } from '../../db/defaultData';
+import { isLegacyRoutine } from '../../db/storage';
 
 interface RoutinesViewProps {
   routines: WorkoutRoutine[];
@@ -45,12 +46,14 @@ export const RoutinesView: React.FC<RoutinesViewProps> = ({
   const [routineToDelete, setRoutineToDelete] = useState<string | null>(null);
   const [showProgressionModal, setShowProgressionModal] = useState(false);
 
-  // Sort routines from Monday (1) to Sunday (0) for natural athletic weekly flow
-  const sortedRoutines = [...routines].sort((a, b) => {
-    const orderA = a.dayOfWeek === 0 ? 7 : a.dayOfWeek;
-    const orderB = b.dayOfWeek === 0 ? 7 : b.dayOfWeek;
-    return orderA - orderB;
-  });
+  // Sort routines from Monday (1) to Sunday (0) for natural athletic weekly flow, filtering out legacy duplicates
+  const sortedRoutines = [...routines]
+    .filter((r) => !isLegacyRoutine(r))
+    .sort((a, b) => {
+      const orderA = a.dayOfWeek === 0 ? 7 : a.dayOfWeek;
+      const orderB = b.dayOfWeek === 0 ? 7 : b.dayOfWeek;
+      return orderA - orderB;
+    });
 
   const handleCreateNewRoutine = () => {
     const newRoutine: WorkoutRoutine = {
