@@ -22,6 +22,7 @@ import {
 } from '../../types';
 import {
   formatDatePortuguese,
+  formatDayMonthBR,
   formatVolume,
   formatWeight,
   DAY_NAMES,
@@ -348,7 +349,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 )}
               </div>
               <p className="mt-2 text-xs text-zinc-400">
-                Registrado em {latestWeight.date.split('-').reverse().slice(0, 2).join('/')}
+                Registrado em {formatDayMonthBR(latestWeight.date)}
               </p>
             </div>
           ) : (

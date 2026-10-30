@@ -12,7 +12,7 @@ import {
   Info,
 } from 'lucide-react';
 import { WorkoutLog, BodyMeasurement, Exercise } from '../../types';
-import { formatVolume, formatWeight, MUSCLE_GROUP_LABELS } from '../../utils/formatters';
+import { formatVolume, formatWeight, formatDayMonthBR, MUSCLE_GROUP_LABELS } from '../../utils/formatters';
 
 interface AnalyticsViewProps {
   logs: WorkoutLog[];
@@ -247,7 +247,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ logs, measurements
                         />
                       </div>
                       <span className="text-[10px] font-mono text-zinc-400 mt-2 truncate w-full text-center">
-                        {log.date.split('-').reverse().slice(0, 2).join('/')}
+                        {formatDayMonthBR(log.date)}
                       </span>
                     </div>
                   );
@@ -314,7 +314,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ logs, measurements
                         />
                       </div>
                       <span className="text-[10px] font-mono text-zinc-400 mt-2 truncate w-full text-center">
-                        {pt.date.split('-').reverse().slice(0, 2).join('/')}
+                        {formatDayMonthBR(pt.date)}
                       </span>
                     </div>
                   );
@@ -410,7 +410,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ logs, measurements
                           />
                         </div>
                         <span className="text-[10px] font-mono text-zinc-400 mt-2 truncate w-full text-center">
-                          {m.date.split('-').reverse().slice(0, 2).join('/')}
+                          {formatDayMonthBR(m.date)}
                         </span>
                       </div>
                     );

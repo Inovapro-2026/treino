@@ -28,6 +28,7 @@ import { ConfirmationModal } from '../common/ConfirmationModal';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { syncAllWithCloud, subscribeToSyncStatus, SyncStatus } from '../../services/syncService';
 import { SqlMigrationModal } from './SqlMigrationModal';
+import { checkNeonConnection } from '../../lib/neon';
 
 interface SettingsViewProps {
   settings: UserSettings;
@@ -51,11 +52,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>(settings.weightUnit || 'kg');
   const [weeklyGoal, setWeeklyGoal] = useState(settings.weeklyWorkoutGoal || 5);
 
-  const [supabaseUrl, setSupabaseUrl] = useState(
-    settings.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || 'https://hhokoredbiznitmztizy.supabase.co'
-  );
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(
-    settings.supabaseAnonKey || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+  const [neonUrl, setNeonUrl] = useState(
+    settings.neonUrl || import.meta.env.VITE_NEON_CONNECTION_STRING || ''
   );
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -64,6 +62,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ state: 'idle', lastSyncedAt: null, pendingQueueCount: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [neonConnectionStatus, setNeonConnectionStatus] = useState<'checking' | 'syncing' | 'connected' | 'error' | 'not_configured'>('checking');
 
   useEffect(() => {
     const unsubscribe = subscribeToSyncStatus((status) => {
@@ -72,19 +71,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const checkConnection = async () => {
+      const status = await checkNeonConnection();
+      if (!status.isConfigured) {
+        setNeonConnectionStatus('not_configured');
+      } else if (status.isConnected) {
+        setNeonConnectionStatus('connected');
+      } else {
+        setNeonConnectionStatus('error');
+      }
+    };
+    checkConnection();
+  }, []);
+
   const handleManualSync = async () => {
     setIsSyncing(true);
     setSyncToast(null);
     try {
       const success = await syncAllWithCloud();
       if (success) {
-        setSyncToast('Sincronização com Supabase concluída!');
+        setSyncToast('Sincronização com Neon concluída!');
         onDataReload();
       } else {
         setSyncToast('Sincronização pendente ou offline. Dados salvos localmente.');
       }
     } catch {
-      setSyncToast('Erro ao sincronizar com o Supabase.');
+      setSyncToast('Erro ao sincronizar com o Neon.');
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncToast(null), 3500);
@@ -102,9 +115,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       autoStartRest,
       weightUnit,
       weeklyWorkoutGoal: weeklyGoal,
-      supabaseUrl: supabaseUrl.trim() || undefined,
-      supabaseAnonKey: supabaseAnonKey.trim() || undefined,
-      syncStatus: supabaseUrl.trim() ? 'synced' : 'local',
+      neonUrl: neonUrl.trim() || undefined,
+      syncStatus: neonUrl.trim() ? 'synced' : 'local',
     };
     onSaveSettings(updated);
     setSaveToast(true);
@@ -166,6 +178,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     await clearAllData();
     setShowClearConfirm(false);
     onDataReload();
+  };
+
+  const getConnectionStatusLabel = () => {
+    switch (neonConnectionStatus) {
+      case 'connected':
+        return 'Neon Conectado & Sincronizado';
+      case 'syncing':
+        return 'Sincronizando com Neon...';
+      case 'error':
+        return 'Erro de conexão com Neon';
+      case 'not_configured':
+        return 'Neon não configurado';
+      default:
+        return 'Verificando conexão...';
+    }
+  };
+
+  const getConnectionStatusClass = () => {
+    switch (neonConnectionStatus) {
+      case 'connected':
+        return 'bg-lime-400/10 border-lime-400/30 text-lime-400';
+      case 'syncing':
+        return 'bg-blue-400/10 border-blue-400/30 text-blue-400';
+      case 'error':
+        return 'bg-red-400/10 border-red-400/30 text-red-400';
+      case 'not_configured':
+        return 'bg-zinc-800 border-zinc-700 text-zinc-400';
+      default:
+        return 'bg-amber-400/10 border-amber-400/30 text-amber-400';
+    }
   };
 
   return (
@@ -369,38 +411,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Cloud Sync (Supabase) */}
+      {/* Cloud Sync (Neon) */}
       <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Cloud className="w-5 h-5 text-lime-400" />
-              Sincronização em Nuvem (Supabase DB)
+              Sincronização em Nuvem (Neon PostgreSQL)
             </h2>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Conexão com PostgreSQL e Row Level Security (RLS) para persistência e recuperação de treinos entre dispositivos.
+              Conexão com PostgreSQL serverless Neon para persistência e recuperação de treinos entre dispositivos.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <span
-              className={`rounded-xl px-3 py-1 text-xs font-bold border ${
-                syncStatus.state === 'synced'
-                  ? 'bg-lime-400/10 border-lime-400/30 text-lime-400'
-                  : syncStatus.state === 'syncing'
-                  ? 'bg-blue-400/10 border-blue-400/30 text-blue-400'
-                  : syncStatus.state === 'offline'
-                  ? 'bg-zinc-800 border-zinc-700 text-zinc-400'
-                  : 'bg-amber-400/10 border-amber-400/30 text-amber-400'
-              }`}
+              className={`rounded-xl px-3 py-1 text-xs font-bold border ${getConnectionStatusClass()}`}
             >
-              {syncStatus.state === 'synced'
-                ? 'Nuvem Conectada & Sincronizada'
-                : syncStatus.state === 'syncing'
-                ? 'Sincronizando com Supabase...'
-                : syncStatus.state === 'offline'
-                ? 'Modo Local (Offline)'
-                : `${syncStatus.pendingQueueCount || 1} itens pendentes`}
+              {getConnectionStatusLabel()}
             </span>
           </div>
         </div>
@@ -412,32 +440,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          <div>
-            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-              URL do Projeto Supabase
-            </label>
-            <input
-              type="url"
-              value={supabaseUrl}
-              onChange={(e) => setSupabaseUrl(e.target.value)}
-              placeholder="https://hhokoredbiznitmztizy.supabase.co"
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-              Chave Pública Anônima (Anon Key)
-            </label>
-            <input
-              type="password"
-              value={supabaseAnonKey}
-              onChange={(e) => setSupabaseAnonKey(e.target.value)}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5c..."
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-            />
-          </div>
+        <div className="pt-1">
+          <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+            String de Conexão Neon
+          </label>
+          <input
+            type="password"
+            value={neonUrl}
+            onChange={(e) => setNeonUrl(e.target.value)}
+            placeholder="postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require"
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-white focus:border-lime-400 focus:outline-hidden"
+          />
+          <p className="text-[10px] text-zinc-500 mt-1">
+            Formato: postgresql://user:pass@host/db?sslmode=require&channel_binding=require
+          </p>
         </div>
 
         {/* Sync Actions & SQL Modal button */}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Scale, Calendar, Plus, Save } from 'lucide-react';
+import { X, Scale } from 'lucide-react';
 import { BodyMeasurement } from '../../types';
 
 interface AddMeasurementModalProps {
@@ -21,25 +21,6 @@ export const AddMeasurementModal: React.FC<AddMeasurementModalProps> = ({
   const [weightKg, setWeightKg] = useState<string>(
     initialData?.weightKg !== undefined ? String(initialData.weightKg) : ''
   );
-  const [waistCm, setWaistCm] = useState<string>(
-    initialData?.waistCm !== undefined ? String(initialData.waistCm) : ''
-  );
-  const [chestCm, setChestCm] = useState<string>(
-    initialData?.chestCm !== undefined ? String(initialData.chestCm) : ''
-  );
-  const [armCm, setArmCm] = useState<string>(
-    initialData?.armCm !== undefined ? String(initialData.armCm) : ''
-  );
-  const [thighCm, setThighCm] = useState<string>(
-    initialData?.thighCm !== undefined ? String(initialData.thighCm) : ''
-  );
-  const [hipCm, setHipCm] = useState<string>(
-    initialData?.hipCm !== undefined ? String(initialData.hipCm) : ''
-  );
-  const [calfCm, setCalfCm] = useState<string>(
-    initialData?.calfCm !== undefined ? String(initialData.calfCm) : ''
-  );
-  const [notes, setNotes] = useState(initialData?.notes || '');
 
   if (!isOpen) return null;
 
@@ -57,13 +38,15 @@ export const AddMeasurementModal: React.FC<AddMeasurementModalProps> = ({
       id: initialData?.id || `meas_${Date.now()}`,
       date,
       weightKg: parseNum(weightKg),
-      waistCm: parseNum(waistCm),
-      chestCm: parseNum(chestCm),
-      armCm: parseNum(armCm),
-      thighCm: parseNum(thighCm),
-      hipCm: parseNum(hipCm),
-      calfCm: parseNum(calfCm),
-      notes: notes.trim() || undefined,
+      // Preserva valores antigos de circunferências/observações ao editar,
+      // sem exibi-los no formulário.
+      waistCm: initialData?.waistCm,
+      chestCm: initialData?.chestCm,
+      armCm: initialData?.armCm,
+      thighCm: initialData?.thighCm,
+      hipCm: initialData?.hipCm,
+      calfCm: initialData?.calfCm,
+      notes: initialData?.notes,
     };
 
     onSave(measurement);
@@ -80,10 +63,10 @@ export const AddMeasurementModal: React.FC<AddMeasurementModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">
-                {initialData ? 'Editar Medidas Físicas' : 'Registrar Peso & Medidas'}
+                {initialData ? 'Editar Peso Corporal' : 'Registrar Peso Corporal'}
               </h2>
               <p className="text-xs text-zinc-400">
-                Campos vazios serão mantidos em branco (não zerados).
+                Registre seu peso corporal para acompanhar sua evolução.
               </p>
             </div>
           </div>
@@ -96,8 +79,7 @@ export const AddMeasurementModal: React.FC<AddMeasurementModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          {/* Date & Weight */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
                 Data *
@@ -126,100 +108,6 @@ export const AddMeasurementModal: React.FC<AddMeasurementModalProps> = ({
                 className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs font-semibold text-white focus:border-lime-400 focus:outline-hidden"
               />
             </div>
-          </div>
-
-          {/* Circumference Measurements */}
-          <div className="pt-2">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-2">
-              Circunferências Corporais (cm)
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-[11px] text-zinc-400 block mb-1">Braço (cm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={armCm}
-                  onChange={(e) => setArmCm(e.target.value)}
-                  placeholder="Ex: 38.0"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-zinc-400 block mb-1">Peito / Tórax (cm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={chestCm}
-                  onChange={(e) => setChestCm(e.target.value)}
-                  placeholder="Ex: 104.5"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-zinc-400 block mb-1">Cintura (cm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={waistCm}
-                  onChange={(e) => setWaistCm(e.target.value)}
-                  placeholder="Ex: 82.0"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-zinc-400 block mb-1">Quadril (cm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={hipCm}
-                  onChange={(e) => setHipCm(e.target.value)}
-                  placeholder="Ex: 98.0"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-zinc-400 block mb-1">Coxa (cm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={thighCm}
-                  onChange={(e) => setThighCm(e.target.value)}
-                  placeholder="Ex: 61.0"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-zinc-400 block mb-1">Panturrilha (cm)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={calfCm}
-                  onChange={(e) => setCalfCm(e.target.value)}
-                  placeholder="Ex: 39.0"
-                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-xs text-white focus:border-lime-400 focus:outline-hidden"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
-              Observações (opcional)
-            </label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ex: Em jejum, logo pela manhã..."
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2 text-xs text-zinc-200 focus:border-lime-400 focus:outline-hidden"
-            />
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">

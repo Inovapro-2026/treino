@@ -4,11 +4,6 @@ import {
   Plus,
   Trash2,
   Edit3,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Calendar,
-  Info,
 } from 'lucide-react';
 import { BodyMeasurement } from '../../types';
 import { AddMeasurementModal } from './AddMeasurementModal';
@@ -50,10 +45,10 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-white">
-            Peso Corporal & Medidas
+            Peso Corporal
           </h1>
           <p className="text-xs sm:text-sm text-zinc-400">
-            Acompanhe a composição corporal e evolução das circunferências musculares.
+            Acompanhe seu peso corporal ao longo do tempo.
           </p>
         </div>
 
@@ -65,13 +60,13 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
           className="flex items-center justify-center gap-2 rounded-xl bg-lime-400 px-4 py-2.5 text-xs font-bold text-zinc-950 hover:bg-lime-300 transition active:scale-95 shadow-sm shadow-lime-950/20"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Registrar Medidas</span>
+          <span>Registrar Peso</span>
         </button>
       </div>
 
-      {/* Latest Metrics Summary Cards */}
+      {/* Latest Weight Summary Card */}
       {latest ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 p-4 shadow-lg">
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
               Peso Atual
@@ -92,49 +87,13 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
             </div>
             <p className="text-[11px] text-zinc-500 mt-1">{latest.date}</p>
           </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 p-4 shadow-lg">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
-              Braço
-            </span>
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-2xl sm:text-3xl font-extrabold text-white">
-                {latest.armCm !== undefined ? `${latest.armCm} cm` : '—'}
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-500 mt-1">Circunferência braquial</p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 p-4 shadow-lg">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
-              Peitoral / Tórax
-            </span>
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-2xl sm:text-3xl font-extrabold text-white">
-                {latest.chestCm !== undefined ? `${latest.chestCm} cm` : '—'}
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-500 mt-1">Circunferência torácica</p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 p-4 shadow-lg">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">
-              Cintura
-            </span>
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="text-2xl sm:text-3xl font-extrabold text-white">
-                {latest.waistCm !== undefined ? `${latest.waistCm} cm` : '—'}
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-500 mt-1">Linha do umbigo</p>
-          </div>
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center text-zinc-400">
           <Scale className="w-8 h-8 mx-auto text-zinc-600 mb-2" />
-          <p className="text-sm font-semibold text-zinc-300">Nenhuma medição registrada ainda</p>
+          <p className="text-sm font-semibold text-zinc-300">Nenhum peso registrado ainda</p>
           <p className="text-xs text-zinc-500 mt-1">
-            Cadastre seu peso e medidas corporais para acompanhar sua hipertrofia.
+            Cadastre seu peso corporal para acompanhar sua evolução.
           </p>
         </div>
       )}
@@ -143,7 +102,7 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 overflow-hidden shadow-xl">
         <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-            Histórico Completo de Medições ({sortedMeasurements.length})
+            Histórico de Registros ({sortedMeasurements.length})
           </h3>
         </div>
 
@@ -154,12 +113,6 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
                 <tr>
                   <th className="p-3.5 whitespace-nowrap">DATA</th>
                   <th className="p-3.5 whitespace-nowrap text-center">PESO (KG)</th>
-                  <th className="p-3.5 whitespace-nowrap text-center">BRAÇO (CM)</th>
-                  <th className="p-3.5 whitespace-nowrap text-center">PEITO (CM)</th>
-                  <th className="p-3.5 whitespace-nowrap text-center">CINTURA (CM)</th>
-                  <th className="p-3.5 whitespace-nowrap text-center">COXA (CM)</th>
-                  <th className="p-3.5 whitespace-nowrap text-center">QUADRIL (CM)</th>
-                  <th className="p-3.5 whitespace-nowrap text-center">PANTURRILHA (CM)</th>
                   <th className="p-3.5 whitespace-nowrap text-right">AÇÕES</th>
                 </tr>
               </thead>
@@ -172,24 +125,6 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
                     <td className="p-3.5 text-center font-bold text-lime-400 font-mono">
                       {m.weightKg !== undefined ? `${m.weightKg} kg` : '—'}
                     </td>
-                    <td className="p-3.5 text-center font-mono">
-                      {m.armCm !== undefined ? `${m.armCm} cm` : '—'}
-                    </td>
-                    <td className="p-3.5 text-center font-mono">
-                      {m.chestCm !== undefined ? `${m.chestCm} cm` : '—'}
-                    </td>
-                    <td className="p-3.5 text-center font-mono">
-                      {m.waistCm !== undefined ? `${m.waistCm} cm` : '—'}
-                    </td>
-                    <td className="p-3.5 text-center font-mono">
-                      {m.thighCm !== undefined ? `${m.thighCm} cm` : '—'}
-                    </td>
-                    <td className="p-3.5 text-center font-mono">
-                      {m.hipCm !== undefined ? `${m.hipCm} cm` : '—'}
-                    </td>
-                    <td className="p-3.5 text-center font-mono">
-                      {m.calfCm !== undefined ? `${m.calfCm} cm` : '—'}
-                    </td>
                     <td className="p-3.5 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
@@ -198,14 +133,14 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
                             setIsModalOpen(true);
                           }}
                           className="p-1 text-zinc-400 hover:text-white rounded-md"
-                          title="Editar medida"
+                          title="Editar peso"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => setIdToDelete(m.id)}
                           className="p-1 text-zinc-400 hover:text-red-400 rounded-md"
-                          title="Excluir medida"
+                          title="Excluir registro"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -218,7 +153,7 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
           </div>
         ) : (
           <div className="p-8 text-center text-xs text-zinc-500">
-            Nenhuma medição registrada.
+            Nenhum registro encontrado.
           </div>
         )}
       </div>
@@ -237,8 +172,8 @@ export const MeasurementsView: React.FC<MeasurementsViewProps> = ({
       {/* Delete Confirmation Modal */}
       <ConfirmationModal
         isOpen={idToDelete !== null}
-        title="Excluir Registro de Medidas?"
-        description="Esta medição será permanentemente apagada do seu histórico."
+        title="Excluir Registro de Peso?"
+        description="Este registro será permanentemente apagado do seu histórico."
         confirmLabel="Sim, Excluir"
         cancelLabel="Cancelar"
         isDestructive={true}

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
-import { getUserAccountByEmail, updateUserAccountPin } from '../../db/storage';
-import { verifyValue, generateSalt, hashStringWithSalt } from '../../utils/security';
+import { sql, hashPin } from '../../lib/neon';
 
 interface PinRecoveryModalProps {
   isOpen: boolean;
@@ -36,15 +35,19 @@ export const PinRecoveryModal: React.FC<PinRecoveryModalProps> = ({
 
     try {
       const trimmedEmail = email.trim().toLowerCase();
-      const account = await getUserAccountByEmail(trimmedEmail);
 
-      if (!account) {
+      // Verify against Neon database
+      const result = await sql`SELECT pin_salt, pin_hash FROM profiles WHERE email = ${trimmedEmail}`;
+
+      if (result.length === 0) {
         setErrorMessage('Nenhuma conta encontrada com este e-mail.');
         setIsLoading(false);
         return;
       }
 
-      const isValidPassword = await verifyValue(password, account.passwordSalt, account.passwordHash);
+      const profile = result[0];
+      const isValidPassword = await hashPin(password, profile.pin_salt) === profile.pin_hash;
+
       if (!isValidPassword) {
         setErrorMessage('Senha incorreta. Verifique suas credenciais.');
         setIsLoading(false);
@@ -79,15 +82,16 @@ export const PinRecoveryModal: React.FC<PinRecoveryModalProps> = ({
 
     try {
       const trimmedEmail = email.trim().toLowerCase();
-      const newPinSalt = generateSalt(16);
-      const newPinHash = await hashStringWithSalt(newPin, newPinSalt);
+      const newPinSalt = crypto.getRandomValues(new Uint8Array(16));
+      const newPinSaltHex = Array.from(newPinSalt, byte => byte.toString(16).padStart(2, '0')).join('');
+      const newPinHash = await hashPin(newPin, newPinSaltHex);
 
-      const updated = await updateUserAccountPin(trimmedEmail, newPinHash, newPinSalt);
-      if (!updated) {
-        setErrorMessage('Falha ao atualizar o código no banco de dados.');
-        setIsLoading(false);
-        return;
-      }
+      // Update PIN in Neon database
+      await sql`
+        UPDATE profiles 
+        SET pin_salt = ${newPinSaltHex}, pin_hash = ${newPinHash}, updated_at = NOW()
+        WHERE email = ${trimmedEmail}
+      `;
 
       setSuccessMessage('Código de acesso atualizado com sucesso!');
       setTimeout(() => {
@@ -159,7 +163,7 @@ export const PinRecoveryModal: React.FC<PinRecoveryModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                  Sua Senha Mestra
+                  Sua Senha
                 </label>
                 <button
                   type="button"

@@ -7,13 +7,13 @@ interface SqlMigrationModalProps {
 }
 
 export const SQL_MIGRATION_SCRIPT = `-- ==============================================================================
--- HyperPulse Treino — Supabase PostgreSQL Schema & Migrations
--- Arquitetura completa com Row Level Security (RLS) para todas as tabelas
+-- HyperPulse Treino — Neon PostgreSQL Schema & Migrations
+-- Arquitetura para PostgreSQL serverless (compatível com Neon, Supabase, etc.)
 -- ==============================================================================
 
--- 1. PROFILES (Perfis de usuários vinculados ao Supabase Auth)
+-- 1. PROFILES (Perfis de usuários)
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text UNIQUE NOT NULL,
   name text NOT NULL DEFAULT 'Atleta',
   pin_salt text NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- 2. USER SETTINGS (Configurações e preferências de treino)
 CREATE TABLE IF NOT EXISTS public.user_settings (
-  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
   theme text NOT NULL DEFAULT 'dark',
   accent_color text NOT NULL DEFAULT 'lime',
   default_rest_seconds integer NOT NULL DEFAULT 90,
@@ -43,10 +43,10 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
 -- 3. ROUTINES (Fichas e divisões de treino do usuário)
 CREATE TABLE IF NOT EXISTS public.routines (
   id text NOT NULL,
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   name text NOT NULL,
   description text,
-  day_of_week integer NOT NULL,
+  day_of_week integer NOT NULL, -- 0=Domingo, 1=Segunda, etc.
   is_rest_day boolean NOT NULL DEFAULT false,
   color text,
   plan_name text DEFAULT 'Treino de Hipertrofia — Smart Fit',
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS public.routines (
 -- 4. EXERCISES (Biblioteca de exercícios e customizados)
 CREATE TABLE IF NOT EXISTS public.exercises (
   id text NOT NULL,
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   name text NOT NULL,
   target_muscle_group text NOT NULL,
   secondary_muscles jsonb DEFAULT '[]'::jsonb,
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS public.exercises (
 -- 5. WORKOUT LOGS (Sessões de treino concluídas no histórico)
 CREATE TABLE IF NOT EXISTS public.workout_logs (
   id text NOT NULL,
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   routine_id text NOT NULL,
   routine_name text NOT NULL,
   date timestamptz NOT NULL,
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS public.workout_logs (
 -- 6. BODY MEASUREMENTS (Evolução de medidas corporais)
 CREATE TABLE IF NOT EXISTS public.body_measurements (
   id text NOT NULL,
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   date timestamptz NOT NULL,
   weight_kg numeric(5, 2),
   waist_cm numeric(5, 2),
@@ -113,35 +113,76 @@ CREATE TABLE IF NOT EXISTS public.body_measurements (
   PRIMARY KEY (id, user_id)
 );
 
--- 7. ACTIVE SESSIONS (Sessão de treino em andamento)
+-- 7. ACTIVE SESSIONS (Sessão de treino em andamento para sincronização entre aparelhos)
 CREATE TABLE IF NOT EXISTS public.active_sessions (
-  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
   session_data jsonb NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- ÍNDICES
+-- ==============================================================================
+-- ÍNDICES PARA PERFORMANCE
+-- ==============================================================================
 CREATE INDEX IF NOT EXISTS idx_routines_user_day ON public.routines(user_id, day_of_week);
 CREATE INDEX IF NOT EXISTS idx_workout_logs_user_date ON public.workout_logs(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_body_measurements_user_date ON public.body_measurements(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_exercises_user_group ON public.exercises(user_id, target_muscle_group);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 
--- ROW LEVEL SECURITY (RLS)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.routines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.exercises ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workout_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.body_measurements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.active_sessions ENABLE ROW LEVEL SECURITY;
+-- ==============================================================================
+-- TRIGGER PARA ATUALIZAR AUTOMATICAMENTE updated_at
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- POLÍTICAS
-CREATE POLICY "profiles_manage_own" ON public.profiles FOR ALL USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
-CREATE POLICY "settings_manage_own" ON public.user_settings FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "routines_manage_own" ON public.routines FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "exercises_manage_own" ON public.exercises FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "logs_manage_own" ON public.workout_logs FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "measurements_manage_own" ON public.body_measurements FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "sessions_manage_own" ON public.active_sessions FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+DROP TRIGGER IF EXISTS trigger_profiles_updated_at ON public.profiles;
+CREATE TRIGGER trigger_profiles_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_routines_updated_at ON public.routines;
+CREATE TRIGGER trigger_routines_updated_at
+  BEFORE UPDATE ON public.routines
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_settings_updated_at ON public.user_settings;
+CREATE TRIGGER trigger_settings_updated_at
+  BEFORE UPDATE ON public.user_settings
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_exercises_updated_at ON public.exercises;
+CREATE TRIGGER trigger_exercises_updated_at
+  BEFORE UPDATE ON public.exercises
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_workout_logs_updated_at ON public.workout_logs;
+CREATE TRIGGER trigger_workout_logs_updated_at
+  BEFORE UPDATE ON public.workout_logs
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_body_measurements_updated_at ON public.body_measurements;
+CREATE TRIGGER trigger_body_measurements_updated_at
+  BEFORE UPDATE ON public.body_measurements
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS trigger_active_sessions_updated_at ON public.active_sessions;
+CREATE TRIGGER trigger_active_sessions_updated_at
+  BEFORE UPDATE ON public.active_sessions
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_updated_at();
+
+-- ==============================================================================
+-- NOTAS DE USO:
+-- ==============================================================================
+-- 1. Execute este script no Neon Console (https://console.neon.tech) > SQL Editor
+-- 2. Ou use: psql "postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require" -f migration.sql
+-- 3. O app usa autenticação própria (email/senha com PIN) - não depende de Supabase Auth
+-- 4. A segurança de acesso aos dados é feita no nível da aplicação (middleware/API)
+-- ==============================================================================
 `;
 
 export const SqlMigrationModal: React.FC<SqlMigrationModalProps> = ({ isOpen, onClose }) => {
@@ -170,9 +211,9 @@ export const SqlMigrationModal: React.FC<SqlMigrationModalProps> = ({ isOpen, on
             <FileCode className="w-5 h-5 stroke-[2.2]" />
           </div>
           <div>
-            <h2 className="text-lg font-extrabold text-white">Script de Migração SQL — Supabase</h2>
+            <h2 className="text-lg font-extrabold text-white">Script de Migração SQL — Neon PostgreSQL</h2>
             <p className="text-xs text-zinc-400">
-              Cole este script no <strong>SQL Editor</strong> do painel do seu projeto Supabase para criar as tabelas com RLS.
+              Cole este script no <strong>SQL Editor</strong> do <a href="https://console.neon.tech" target="_blank" rel="noreferrer" className="text-lime-400 hover:underline">Neon Console</a> para criar as tabelas.
             </p>
           </div>
         </div>
@@ -184,18 +225,18 @@ export const SqlMigrationModal: React.FC<SqlMigrationModalProps> = ({ isOpen, on
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-800">
           <div className="flex items-center gap-2 text-xs text-zinc-400">
             <ShieldCheck className="w-4 h-4 text-lime-400 shrink-0" />
-            <span>Row Level Security (RLS) habilitada em todas as tabelas</span>
+            <span>Triggers de updated_at automáticos inclusos</span>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <a
-              href="https://supabase.com/dashboard/project/hhokoredbiznitmztizy/sql"
+              href="https://console.neon.tech"
               target="_blank"
               rel="noreferrer"
               className="flex items-center justify-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs font-bold text-zinc-300 hover:text-white transition flex-1 sm:flex-none"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span>Abrir SQL Editor</span>
+              <span>Abrir Neon Console</span>
             </a>
 
             <button

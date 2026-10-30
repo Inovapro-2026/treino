@@ -34,6 +34,8 @@ import {
 } from './db/storage';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, NavTab } from './components/layout/Sidebar';
+import { motion, AnimatePresence } from 'motion/react';
+import { ChevronRight, Play, Clock, Dumbbell, X } from 'lucide-react';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { RoutinesView } from './components/routines/RoutinesView';
 import { ExerciseLibrary } from './components/exercises/ExerciseLibrary';
@@ -46,7 +48,6 @@ import { AddMeasurementModal } from './components/measurements/AddMeasurementMod
 import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { LoginView } from './components/auth/LoginView';
 import { DEFAULT_SETTINGS } from './db/defaultData';
-import { Dumbbell } from 'lucide-react';
 import { syncAllWithCloud, subscribeToSyncStatus, SyncStatus } from './services/syncService';
 
 export default function App() {
@@ -58,6 +59,8 @@ export default function App() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [activeSession, setActiveSession] = useState<ActiveWorkoutSession | null>(null);
   const [isWorkoutModalOpen, setIsWorkoutModalOpen] = useState(false);
+  const [isWorkoutSelectOpen, setIsWorkoutSelectOpen] = useState(false);
+  const [previousTab, setPreviousTab] = useState<NavTab>('dashboard');
   const [isNewMeasurementOpen, setIsNewMeasurementOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -121,6 +124,16 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  // Handle workout tab - open selection modal
+  useEffect(() => {
+    if (currentTab === 'workout') {
+      setPreviousTab((prev) => prev !== 'workout' ? prev : 'dashboard');
+      setIsWorkoutSelectOpen(true);
+    } else {
+      setIsWorkoutSelectOpen(false);
+    }
+  }, [currentTab]);
 
   const handleLogout = async () => {
     await saveActiveAuthSession(null);
@@ -442,6 +455,99 @@ export default function App() {
           onDiscardWorkout={handleDiscardWorkout}
         />
       )}
+
+      {/* Workout Selection Modal */}
+      <AnimatePresence>
+        {isWorkoutSelectOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onClick={() => {
+              setIsWorkoutSelectOpen(false);
+              setCurrentTab(previousTab);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+                  <Dumbbell className="w-6 h-6 text-lime-400" />
+                  Iniciar Treino
+                </h2>
+                <button
+                  onClick={() => {
+                    setIsWorkoutSelectOpen(false);
+                    setCurrentTab(previousTab);
+                  }}
+                  className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {activeSession && (
+                <button
+                  onClick={() => {
+                    setIsWorkoutModalOpen(true);
+                    setIsWorkoutSelectOpen(false);
+                  }}
+                  className="w-full mb-4 flex items-center gap-3 rounded-xl border border-lime-400/30 bg-lime-400/10 px-4 py-3 text-left transition hover:bg-lime-400/20"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-lime-400 text-zinc-950 font-bold">
+                    <Play className="w-5 h-5 fill-current" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-white">Retomar treino em andamento</p>
+                    <p className="text-xs text-zinc-400">{activeSession.routineName}</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-lime-400" />
+                </button>
+              )}
+
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {routines.filter((r) => !r.isRestDay).map((routine) => (
+                  <button
+                    key={routine.id}
+                    onClick={() => {
+                      handleStartWorkout(routine);
+                      setIsWorkoutSelectOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-left transition hover:border-lime-400/50 hover:bg-zinc-900"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-lime-400">
+                      <Dumbbell className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-white truncate">{routine.name}</p>
+                      <p className="text-xs text-zinc-400">
+                        {routine.exercises.reduce((acc, ex) => acc + ex.sets.length, 0)} séries · {routine.estimatedMinutes || '60-75 min'}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-zinc-500" />
+                  </button>
+                ))}
+              </div>
+
+              {routines.filter((r) => !r.isRestDay).length === 0 && (
+                <div className="text-center py-8 text-zinc-400">
+                  <Dumbbell className="w-10 h-10 mx-auto text-zinc-600 mb-2" />
+                  <p className="font-semibold text-zinc-300">Nenhuma ficha de treino cadastrada</p>
+                  <p className="text-xs mt-1">Vá em "Fichas" para criar sua primeira ficha</p>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Add Measurement Quick Modal */}
       <AddMeasurementModal

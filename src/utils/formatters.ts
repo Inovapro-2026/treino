@@ -37,6 +37,38 @@ export function formatShortDate(dateStr: string): string {
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
+/**
+ * Normalizes date values coming from different sources (IndexedDB, Neon, JSON).
+ * Neon returns `timestamptz` columns as native Date objects, while the rest of
+ * the app expects ISO strings. Keeping this conversion at the storage boundary
+ * prevents runtime errors such as `date.startsWith is not a function`.
+ */
+export function normalizeDate(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return '';
+}
+
+/** Formats a date as `dd/mm` without timezone shifts for date-only strings. */
+export function formatDayMonthBR(value: string | Date): string {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? ''
+      : value.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (match) return `${match[3]}/${match[2]}`;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
 export const MUSCLE_GROUP_LABELS: Record<MuscleGroup, string> = {
   peito: 'Peito',
   costas: 'Costas',

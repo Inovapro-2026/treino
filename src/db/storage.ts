@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { DEFAULT_EXERCISES, DEFAULT_ROUTINES, DEFAULT_SETTINGS } from './defaultData';
 import { verifyValue } from '../utils/security';
+import { normalizeDate } from '../utils/formatters';
 
 const DB_NAME = 'HyperPulse_Gym_DB';
 const DB_VERSION = 2;
@@ -310,7 +311,9 @@ export async function getWorkoutLogs(): Promise<WorkoutLog[]> {
   try {
     const logs = await performTx<WorkoutLog[]>(STORES.SESSIONS, 'readonly', (store) => store.getAll());
     if (logs) {
-      return logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return logs
+        .map((log) => ({ ...log, date: normalizeDate(log.date) }))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
   } catch (e) {
     console.warn('Error fetching logs', e);
@@ -319,8 +322,9 @@ export async function getWorkoutLogs(): Promise<WorkoutLog[]> {
 }
 
 export async function saveWorkoutLog(log: WorkoutLog): Promise<void> {
-  await performTx(STORES.SESSIONS, 'readwrite', (store) => store.put(log));
-  notifyMutation('log', log);
+  const normalized: WorkoutLog = { ...log, date: normalizeDate(log.date) };
+  await performTx(STORES.SESSIONS, 'readwrite', (store) => store.put(normalized));
+  notifyMutation('log', normalized);
 }
 
 export async function deleteWorkoutLog(id: string): Promise<void> {
@@ -336,7 +340,9 @@ export async function getBodyMeasurements(): Promise<BodyMeasurement[]> {
       (store) => store.getAll()
     );
     if (measurements) {
-      return measurements.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return measurements
+        .map((m) => ({ ...m, date: normalizeDate(m.date) }))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
   } catch (e) {
     console.warn('Error fetching measurements', e);
@@ -345,8 +351,9 @@ export async function getBodyMeasurements(): Promise<BodyMeasurement[]> {
 }
 
 export async function saveBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
-  await performTx(STORES.MEASUREMENTS, 'readwrite', (store) => store.put(measurement));
-  notifyMutation('measurement', measurement);
+  const normalized: BodyMeasurement = { ...measurement, date: normalizeDate(measurement.date) };
+  await performTx(STORES.MEASUREMENTS, 'readwrite', (store) => store.put(normalized));
+  notifyMutation('measurement', normalized);
 }
 
 export async function deleteBodyMeasurement(id: string): Promise<void> {

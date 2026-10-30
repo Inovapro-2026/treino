@@ -155,8 +155,7 @@ export interface UserSettings {
   weeklyWorkoutGoal: number;
   userName: string;
   motivationalMessage: string;
-  supabaseUrl?: string;
-  supabaseAnonKey?: string;
+  neonUrl?: string;
   syncStatus: 'local' | 'synced' | 'pending' | 'error';
   lastSyncTimestamp?: number;
 }
